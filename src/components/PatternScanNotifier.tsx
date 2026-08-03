@@ -59,6 +59,7 @@ export const PatternScanNotifier: React.FC<PatternScanNotifierProps> = ({
       'Cup & Handle',
       'Ascending Triangle',
       'VCP Compression',
+      'Harmonic Pattern (C-to-D)',
       'Box Range Consolidation',
     ];
 

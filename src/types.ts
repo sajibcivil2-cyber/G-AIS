@@ -76,6 +76,42 @@ export interface DseStockData {
   candles: DseStockCandle[];
 }
 
+export interface HarmonicPathLevel {
+  levelName: string;
+  fibRatio: string;
+  price: number;
+  gainPct: number;
+  description: string;
+}
+
+export interface HarmonicPatternDetails {
+  subtype: 'Bullish Gartley' | 'Bullish Bat' | 'Bullish Butterfly' | 'Bullish Crab' | 'Inverse Bullish Gartley' | 'Inverse Bullish Bat' | 'Inverse Bullish Butterfly' | 'Inverse Bullish Crab';
+  xPrice: number;
+  xDate: string;
+  xIdx: number;
+  aPrice: number;
+  aDate: string;
+  aIdx: number;
+  bPrice: number;
+  bDate: string;
+  bIdx: number;
+  cPrice: number; // Point C (Entry Price)
+  cDate: string;
+  cIdx: number;
+  dTargetPrice: number; // Point D (Exit Target Price - 1.000 PRZ)
+  dDate?: string;
+  t1Price: number; // 0.382 Fib Target along C-D
+  t2Price: number; // 0.618 Fib Target along C-D
+  stopLossPrice: number;
+  abXaRatio: number; // Fib ratio B of XA
+  bcAbRatio: number; // Fib ratio C of AB
+  cdBcRatio: number; // Fib ratio D of BC
+  potentialGainPct: number;
+  potentialRiskPct: number;
+  riskRewardRatio: number;
+  cdPathLevels: HarmonicPathLevel[];
+}
+
 export interface BacktestConfig {
   minYoyGrowthPct: number; // e.g. 3% - 8% (realistic for DSE)
   volumeSurgeMultiplier: number; // e.g. 2.5x ADV
@@ -84,6 +120,7 @@ export interface BacktestConfig {
   stopLossPct: number; // e.g. 5%
   targetProfitPct: number; // e.g. 15%
   minTurnoverMillionBdt: number; // e.g. 20 BDT million
+  strategyType?: 'VOLUME_BREAKOUT' | 'HARMONIC_C_ENTRY_D_EXIT';
 }
 
 export type TechnicalPatternType =
@@ -92,6 +129,7 @@ export type TechnicalPatternType =
   | 'Cup & Handle'
   | 'Ascending Triangle'
   | 'VCP Compression'
+  | 'Harmonic Pattern (C-to-D)'
   | 'Box Range Consolidation';
 
 export interface BreakoutSignal {
@@ -105,7 +143,7 @@ export interface BreakoutSignal {
   priceIncreasePct: number;
   volumeMultiplier: number;
   microPattern: 'VCP Compression' | 'Narrow Range (NR7)' | 'Dry-up Spike' | 'Resistance Retest';
-  macroPattern: 'Cup & Handle' | 'Ascending Triangle' | 'Multi-Week Box' | '50/200 EMA Golden Cross';
+  macroPattern: 'Cup & Handle' | 'Ascending Triangle' | 'Multi-Week Box' | '50/200 EMA Golden Cross' | 'Harmonic XABCD Pattern';
   detectedPattern: TechnicalPatternType;
   patternConfidence: number; // e.g. 85 - 98 (%)
   patternDescription: string;
@@ -119,6 +157,7 @@ export interface BreakoutSignal {
   realizedGainPct: number;
   riskRewardRatio: number; // Planned Target:Stop ratio (e.g. 3.0 = 3.00:1)
   realizedRiskRewardRatio: number; // Historical Peak Return / Max Drawdown ratio
+  harmonicDetails?: HarmonicPatternDetails;
 }
 
 export interface BacktestSummary {
@@ -179,5 +218,6 @@ export interface ScreenerStockCandidate {
   avgTurnoverBdtMillion: number;
   earlyTrendStage?: 'STAGE_1_EARLY_COIL' | 'STAGE_2_IGNITION' | 'STAGE_3_FULL_BREAKOUT' | 'BASE_ACCUMULATION';
   earlyTrendSignals?: string[];
+  harmonicDetails?: HarmonicPatternDetails;
 }
 

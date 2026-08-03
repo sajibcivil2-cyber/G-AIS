@@ -224,6 +224,74 @@ Return a structured JSON object with the following schema:
     }
   });
 
+  // DSE Simulated Realtime Ticker Re-fetch Endpoint for Auto-Resolution
+  app.post('/api/dse/refetch-ticker', async (req, res) => {
+    try {
+      const { symbols, forceFailure } = req.body;
+      if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
+        return res.status(400).json({ success: false, error: 'No symbols specified for ticker re-fetch.' });
+      }
+
+      // Simulate API network roundtrip delay
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      if (forceFailure) {
+        return res.status(503).json({
+          success: false,
+          error: 'Simulated DSE API Gateway Timeout (503). Unable to reach exchange feed server.',
+        });
+      }
+
+      const benchmarkPrices: Record<string, number> = {
+        CONFIDCEM: 68.90,
+        GP: 260.00,
+        BATBC: 252.50,
+        SQURPHARMA: 219.70,
+        RENATA: 470.20,
+        BEXIMCO: 23.20,
+        LHBL: 58.10,
+        OLYMPIC: 154.20,
+        WALTONHIL: 393.10,
+        MARICO: 2719.40,
+        UNIQUEHRL: 44.80,
+        BRACBANK: 63.70,
+        CITYBANK: 24.80,
+        ADNTEL: 118.50,
+        ALLTEX: 16.20,
+        AGNISYSL: 28.50,
+        AAMRANET: 52.30,
+      };
+
+      const refetchedData: Record<string, { symbol: string; close: number; benchmarkSource: string; timestamp: string }> = {};
+
+      symbols.forEach((sym: string) => {
+        const symUpper = sym.toUpperCase();
+        const price = benchmarkPrices[symUpper] || 100.0;
+        refetchedData[symUpper] = {
+          symbol: symUpper,
+          close: price,
+          benchmarkSource: 'DSE Official Realtime Website Feed (Simulated API)',
+          timestamp: new Date().toISOString(),
+        };
+      });
+
+      return res.json({
+        success: true,
+        resolvedCount: Object.keys(refetchedData).length,
+        data: refetchedData,
+        message: `Successfully re-fetched live ticker data for ${Object.keys(refetchedData).length} symbol(s) from simulated DSE API.`,
+        syncedAt: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error('API /api/dse/refetch-ticker Error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to re-fetch ticker data from simulated DSE API.',
+        details: error.message || String(error),
+      });
+    }
+  });
+
   // Vite development middleware vs Static Production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

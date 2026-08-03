@@ -37,7 +37,9 @@ import {
   parseCustomDseStockFiles,
   extractStockDataFromExtractedFiles,
   filterActiveStocks,
-  evaluateStockForScreener
+  evaluateStockForScreener,
+  inferDseSector,
+  DataIntegrityValidator
 } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
 import { DseVolumeBreakoutChart } from './DseVolumeBreakoutChart';
@@ -111,7 +113,10 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
             }
           });
 
-          const mergedPool = filterActiveStocks(Array.from(stockMap.values()));
+          const mergedPool = filterActiveStocks(Array.from(stockMap.values())).map((s) => ({
+            ...s,
+            sector: inferDseSector(s.symbol, s.sector, s.name),
+          }));
           setActiveStockPool(mergedPool);
           setCustomFileLoaded(`Restored Saved DB (${mergedPool.length} Stocks)`);
         }
@@ -167,7 +172,10 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         }
       });
 
-      const updatedPool = filterActiveStocks(Array.from(stockMap.values()));
+      const updatedPool = filterActiveStocks(Array.from(stockMap.values())).map((s) => ({
+        ...s,
+        sector: inferDseSector(s.symbol, s.sector, s.name),
+      }));
       // Persist to database storage automatically
       saveDatabaseToStorage(updatedPool);
       setCustomFileLoaded(`${newStocks.length} Stock Datasets Synced & Saved`);
@@ -471,6 +479,16 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         isDatabaseLoaded={isDatabaseLoaded}
         onStocksUpdated={(updatedStocks) => {
           setActiveStockPool(updatedStocks);
+        }}
+      />
+
+      {/* DSE Data Integrity & Anomaly Detector */}
+      <DataIntegrityValidator
+        stocks={activeStockPool}
+        thresholdPct={2.0}
+        onAutoFixAnomalies={(correctedStocks) => {
+          setActiveStockPool(correctedStocks);
+          saveDatabaseToStorage(correctedStocks);
         }}
       />
 

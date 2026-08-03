@@ -64,6 +64,9 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   const filteredCandidates = useMemo(() => {
     return candidates
       .filter((c) => {
+        if (config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
+          if (!c.harmonicDetails) return false;
+        }
         if (selectedStatus !== 'ALL') {
           if (selectedStatus === 'EARLY_TREND_IGNITION') {
             if (c.decisionStatus !== 'EARLY_TREND_IGNITION' && c.earlyTrendStage !== 'STAGE_2_IGNITION' && c.earlyTrendStage !== 'STAGE_1_EARLY_COIL') return false;
@@ -83,7 +86,7 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
         if (sortBy === 'pe') return a.peRatio - b.peRatio;
         return 0;
       });
-  }, [candidates, selectedStatus, selectedSector, sortBy, selectedPatternFilter]);
+  }, [candidates, selectedStatus, selectedSector, sortBy, selectedPatternFilter, config.strategyType]);
 
   // Executive Metrics
   const strongBuys = candidates.filter((c) => c.decisionStatus === 'STRONG_BUY');
@@ -398,54 +401,87 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
           </div>
         </div>
 
-        {/* Strategy Sliders Panel */}
-        <div className="pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-          <div className="space-y-1">
-            <div className="flex justify-between text-slate-400 font-medium">
-              <span>Volume Surge Requirement:</span>
-              <span className="font-mono text-emerald-400 font-bold">{config.volumeSurgeMultiplier}x ADV</span>
+        {/* Strategy Selection & Slider Control Panel */}
+        <div className="pt-3 border-t border-slate-800/80 space-y-3">
+          {/* Strategy Mode Toggle Buttons */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+            <span className="text-xs text-slate-300 font-bold flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-emerald-400" /> Active Strategy Engine:
+            </span>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => onUpdateConfig({ ...config, strategyType: 'VOLUME_BREAKOUT' })}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  config.strategyType !== 'HARMONIC_C_ENTRY_D_EXIT'
+                    ? 'bg-emerald-600 text-white shadow-md border border-emerald-400'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <span>⚡ Volume Breakout</span>
+              </button>
+
+              <button
+                onClick={() => onUpdateConfig({ ...config, strategyType: 'HARMONIC_C_ENTRY_D_EXIT' })}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT'
+                    ? 'bg-pink-600 text-white shadow-md border border-pink-400'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <span>🎯 Harmonic Pattern (C-Entry ➔ D-Exit)</span>
+              </button>
             </div>
-            <input
-              type="range"
-              min="1.5"
-              max="5.0"
-              step="0.5"
-              value={config.volumeSurgeMultiplier}
-              onChange={(e) => onUpdateConfig({ ...config, volumeSurgeMultiplier: parseFloat(e.target.value) })}
-              className="w-full accent-emerald-500 bg-slate-950 h-1.5 rounded-lg cursor-pointer"
-            />
           </div>
 
-          <div className="space-y-1">
-            <div className="flex justify-between text-slate-400 font-medium">
-              <span>Target Profit % (Reward):</span>
-              <span className="font-mono text-emerald-400 font-bold">+{config.targetProfitPct}%</span>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div className="space-y-1">
+              <div className="flex justify-between text-slate-400 font-medium">
+                <span>Volume Surge Requirement:</span>
+                <span className="font-mono text-emerald-400 font-bold">{config.volumeSurgeMultiplier}x ADV</span>
+              </div>
+              <input
+                type="range"
+                min="1.5"
+                max="5.0"
+                step="0.5"
+                value={config.volumeSurgeMultiplier}
+                onChange={(e) => onUpdateConfig({ ...config, volumeSurgeMultiplier: parseFloat(e.target.value) })}
+                className="w-full accent-emerald-500 bg-slate-950 h-1.5 rounded-lg cursor-pointer"
+              />
             </div>
-            <input
-              type="range"
-              min="8"
-              max="35"
-              step="1"
-              value={config.targetProfitPct}
-              onChange={(e) => onUpdateConfig({ ...config, targetProfitPct: parseInt(e.target.value) })}
-              className="w-full accent-indigo-500 bg-slate-950 h-1.5 rounded-lg cursor-pointer"
-            />
-          </div>
 
-          <div className="space-y-1">
-            <div className="flex justify-between text-slate-400 font-medium">
-              <span>Stop Loss % (Risk):</span>
-              <span className="font-mono text-rose-400 font-bold">-{config.stopLossPct}%</span>
+            <div className="space-y-1">
+              <div className="flex justify-between text-slate-400 font-medium">
+                <span>Target Profit % (Reward):</span>
+                <span className="font-mono text-emerald-400 font-bold">+{config.targetProfitPct}%</span>
+              </div>
+              <input
+                type="range"
+                min="8"
+                max="35"
+                step="1"
+                value={config.targetProfitPct}
+                onChange={(e) => onUpdateConfig({ ...config, targetProfitPct: parseInt(e.target.value) })}
+                className="w-full accent-indigo-500 bg-slate-950 h-1.5 rounded-lg cursor-pointer"
+              />
             </div>
-            <input
-              type="range"
-              min="3"
-              max="12"
-              step="1"
-              value={config.stopLossPct}
-              onChange={(e) => onUpdateConfig({ ...config, stopLossPct: parseInt(e.target.value) })}
-              className="w-full accent-rose-500 bg-slate-950 h-1.5 rounded-lg cursor-pointer"
-            />
+
+            <div className="space-y-1">
+              <div className="flex justify-between text-slate-400 font-medium">
+                <span>Stop Loss % (Risk):</span>
+                <span className="font-mono text-rose-400 font-bold">-{config.stopLossPct}%</span>
+              </div>
+              <input
+                type="range"
+                min="3"
+                max="12"
+                step="1"
+                value={config.stopLossPct}
+                onChange={(e) => onUpdateConfig({ ...config, stopLossPct: parseInt(e.target.value) })}
+                className="w-full accent-rose-500 bg-slate-950 h-1.5 rounded-lg cursor-pointer"
+              />
+            </div>
           </div>
         </div>
       </div>

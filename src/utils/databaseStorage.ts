@@ -89,11 +89,18 @@ export async function loadDatabaseFromStorage(): Promise<DseStockData[] | null> 
       });
 
       if (allStocks && allStocks.length > 0) {
-        // Enforce data reset for bugged GP > 1000
-        const buggedGP = allStocks.some(s => s.symbol === 'GP' && s.candles.length > 0 && s.candles[s.candles.length - 1].close > 1000);
-        
-        if (buggedGP) {
-          console.warn('Detected corrupted GP data in stock database. Clearing cache to reset to defaults...');
+        // Enforce data cleanup for corrupted prices (e.g., from legacy parseFloat comma bug where RENATA/GP/BATBC fell to ~1 BDT)
+        const highValueSymbols = new Set(['GP', 'RENATA', 'BATBC', 'SQURPHARMA', 'BEXIMCO', 'LHBL', 'OLYMPIC', 'WALTON', 'MARICO']);
+        const hasCorruptedPrice = allStocks.some((s) => {
+          if (!s.candles || s.candles.length === 0) return true;
+          const lastClose = s.candles[s.candles.length - 1].close;
+          if (isNaN(lastClose) || lastClose <= 0) return true;
+          if (highValueSymbols.has(s.symbol) && lastClose < 10) return true;
+          return false;
+        });
+
+        if (hasCorruptedPrice) {
+          console.warn('Detected corrupted price data in stock database. Clearing cache to reset to clean defaults...');
           const clearTx = db.transaction(STORE_NAME, 'readwrite');
           clearTx.objectStore(STORE_NAME).clear();
           localStorage.removeItem(LOCALSTORAGE_KEY);

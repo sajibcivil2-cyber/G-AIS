@@ -375,6 +375,87 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
               </div>
             </div>
 
+            {/* Harmonic Pattern XABCD Card if present */}
+            {candidate.harmonicDetails && (
+              <div className="bg-gradient-to-r from-pink-950/40 via-purple-950/40 to-slate-950 p-4 rounded-xl border border-pink-500/40 space-y-3 font-mono text-xs">
+                <div className="flex items-center justify-between border-b border-pink-500/30 pb-2">
+                  <span className="font-extrabold text-pink-300 uppercase flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-pink-400" />
+                    Harmonic Setup: {candidate.harmonicDetails.subtype} (C-to-D Swing Trade)
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-pink-900/60 text-pink-200 border border-pink-700 font-bold text-[11px]">
+                    R:R = {candidate.harmonicDetails.riskRewardRatio} : 1
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]">
+                  <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Point X (Origin)</span>
+                    <strong className="text-slate-200">৳{candidate.harmonicDetails.xPrice}</strong>
+                    <span className="text-[9px] text-slate-500 block">{candidate.harmonicDetails.xDate}</span>
+                  </div>
+
+                  <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Point A (Peak)</span>
+                    <strong className="text-slate-200">৳{candidate.harmonicDetails.aPrice}</strong>
+                    <span className="text-[9px] text-slate-500 block">{candidate.harmonicDetails.aDate}</span>
+                  </div>
+
+                  <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Point B (Retrace)</span>
+                    <strong className="text-slate-200">৳{candidate.harmonicDetails.bPrice}</strong>
+                    <span className="text-[9px] text-pink-400 block">{(candidate.harmonicDetails.abXaRatio * 100).toFixed(1)}% XA</span>
+                  </div>
+
+                  <div className="bg-emerald-950/80 p-2 rounded-lg border border-emerald-500/40 shadow">
+                    <span className="text-[10px] text-emerald-300 font-bold block">🟢 Point C (Buy Entry)</span>
+                    <strong className="text-emerald-200 text-sm">৳{candidate.harmonicDetails.cPrice}</strong>
+                    <span className="text-[9px] text-emerald-400 block">Entry Point ({candidate.harmonicDetails.cDate})</span>
+                  </div>
+
+                  <div className="bg-amber-950/80 p-2 rounded-lg border border-amber-500/40 col-span-2 sm:col-span-1 shadow">
+                    <span className="text-[10px] text-amber-300 font-bold block">🎯 Point D (Exit Target)</span>
+                    <strong className="text-amber-200 text-sm">৳{candidate.harmonicDetails.dTargetPrice}</strong>
+                    <span className="text-[9px] text-amber-400 block">+{candidate.harmonicDetails.potentialGainPct}% Target Gain</span>
+                  </div>
+                </div>
+
+                {/* C-D Trade Path Milestone Roadmap */}
+                {candidate.harmonicDetails.cdPathLevels && candidate.harmonicDetails.cdPathLevels.length > 0 && (
+                  <div className="pt-2 border-t border-pink-500/20 space-y-1.5">
+                    <span className="text-[11px] font-bold text-pink-300 block">
+                      🛤️ Harmonic C-to-D Trade Path Roadmap & Target Levels:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                      {candidate.harmonicDetails.cdPathLevels.map((lvl, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-2 rounded-lg border text-[10px] space-y-0.5 ${
+                            lvl.fibRatio === '0.000'
+                              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+                              : lvl.fibRatio === '1.000 PRZ'
+                              ? 'bg-amber-950/60 border-amber-500/40 text-amber-200'
+                              : lvl.fibRatio === 'Stop-Loss'
+                              ? 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+                              : 'bg-slate-900/80 border-slate-800 text-slate-300'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center font-bold">
+                            <span>{lvl.levelName}</span>
+                            <span className="font-mono text-[9px] px-1 rounded bg-black/40">{lvl.fibRatio}</span>
+                          </div>
+                          <div className="text-xs font-extrabold font-mono">৳{lvl.price.toFixed(2)}</div>
+                          <div className="text-[9px] opacity-80">
+                            {lvl.gainPct > 0 ? `+${lvl.gainPct.toFixed(1)}%` : `${lvl.gainPct.toFixed(1)}%`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Trade Execution Plan Card */}
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">

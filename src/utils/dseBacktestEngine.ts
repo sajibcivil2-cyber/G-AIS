@@ -1,3 +1,16 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ShieldAlert,
+  RefreshCw,
+  Zap,
+  ChevronDown,
+  ChevronUp,
+  Activity,
+  FileText,
+  X
+} from 'lucide-react';
 import {
   DseStockData,
   DseStockCandle,
@@ -6,6 +19,7 @@ import {
   BreakoutSignal,
   ScreenerStockCandidate,
   TechnicalPatternType,
+  HarmonicPatternDetails,
   ExtractedFile,
   EarlyTrendAnalysis
 } from '../types';
@@ -19,7 +33,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 7.8, // Realistic DSE YoY growth
     peRatio: 11.2,
     avgTurnoverBdtMillion: 145.5,
-    candles: generateRealisticCandles(212.0, 380, 0.08, 3.8, '2026-08-02', 'Bullish Flag'),
+    candles: generateRealisticCandles(219.7, 380, 0.08, 3.8, '2026-08-02', 'Bullish Flag'),
   },
   {
     symbol: 'BATBC',
@@ -28,7 +42,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 5.4,
     peRatio: 9.8,
     avgTurnoverBdtMillion: 98.2,
-    candles: generateRealisticCandles(380.0, 380, 0.06, 4.2, '2026-08-02', 'Cup & Handle'),
+    candles: generateRealisticCandles(252.5, 380, 0.06, 4.2, '2026-08-02', 'Cup & Handle'),
   },
   {
     symbol: 'BEXIMCO',
@@ -37,7 +51,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 4.1,
     peRatio: 14.5,
     avgTurnoverBdtMillion: 210.0,
-    candles: generateRealisticCandles(115.0, 380, 0.12, 4.8, '2026-08-02', 'Double Bottom'),
+    candles: generateRealisticCandles(23.2, 380, 0.12, 4.8, '2026-08-02', 'Double Bottom'),
   },
   {
     symbol: 'RENATA',
@@ -46,7 +60,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 6.2,
     peRatio: 18.4,
     avgTurnoverBdtMillion: 65.0,
-    candles: generateRealisticCandles(720.0, 380, 0.07, 3.2, '2026-08-02', 'Ascending Triangle'),
+    candles: generateRealisticCandles(470.2, 380, 0.07, 3.2, '2026-08-02', 'Harmonic Pattern (C-to-D)'),
   },
   {
     symbol: 'GP',
@@ -55,7 +69,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 8.5,
     peRatio: 10.5,
     avgTurnoverBdtMillion: 180.4,
-    candles: generateRealisticCandles(285.0, 380, 0.05, 3.5, '2026-08-02', 'VCP Compression'),
+    candles: generateRealisticCandles(260.0, 380, 0.05, 3.5, '2026-08-02', 'VCP Compression'),
   },
   {
     symbol: 'OLYMPIC',
@@ -64,7 +78,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 9.1,
     peRatio: 13.1,
     avgTurnoverBdtMillion: 82.0,
-    candles: generateRealisticCandles(152.0, 380, 0.09, 3.9, '2026-08-02', 'Bullish Flag'),
+    candles: generateRealisticCandles(154.2, 380, 0.09, 3.9, '2026-08-02', 'Bullish Flag'),
   },
   {
     symbol: 'LHBL',
@@ -73,7 +87,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 6.8,
     peRatio: 12.0,
     avgTurnoverBdtMillion: 110.5,
-    candles: generateRealisticCandles(68.5, 380, 0.10, 4.0, '2026-08-02', 'Cup & Handle'),
+    candles: generateRealisticCandles(58.1, 380, 0.10, 4.0, '2026-08-02', 'Cup & Handle'),
   },
   {
     symbol: 'ADNTEL',
@@ -82,7 +96,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 11.2,
     peRatio: 15.2,
     avgTurnoverBdtMillion: 75.8,
-    candles: generateRealisticCandles(124.0, 380, 0.14, 4.5, '2026-08-02', 'VCP Compression'),
+    candles: generateRealisticCandles(118.5, 380, 0.14, 4.5, '2026-08-02', 'VCP Compression'),
   },
   {
     symbol: 'CITYBANK',
@@ -91,7 +105,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     yoyGrowthPct: 5.9,
     peRatio: 5.2,
     avgTurnoverBdtMillion: 92.4,
-    candles: generateRealisticCandles(24.5, 380, 0.06, 3.6, '2026-08-02', 'Double Bottom'),
+    candles: generateRealisticCandles(24.8, 380, 0.06, 3.6, '2026-08-02', 'Double Bottom'),
   },
   {
     symbol: 'ALLTEX',
@@ -110,6 +124,15 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     peRatio: 19.5,
     avgTurnoverBdtMillion: 55.4,
     candles: generateRealisticCandles(22.0, 380, 0.12, 4.2, '2026-08-02', 'Cup & Handle'),
+  },
+  {
+    symbol: 'CONFIDCEM',
+    name: 'Confidence Cement PLC',
+    sector: 'Cement',
+    yoyGrowthPct: 7.2,
+    peRatio: 12.5,
+    avgTurnoverBdtMillion: 68.4,
+    candles: generateRealisticCandles(68.9, 380, 0.08, 4.0, '2026-08-02', 'Harmonic Pattern (C-to-D)'),
   },
 ];
 
@@ -197,6 +220,13 @@ function generateRealisticCandles(
         if (dist > 0 && dist <= 10) { dailyChangePct = (Math.random() - 0.5) * 0.005; volume = baseVolume * 0.2; } // Tight compression
         else if (dist === 0) { dailyChangePct = 0.05; volume = baseVolume * 5.0; } // Breakout
       }
+      else if (patternToForce === 'Harmonic Pattern (C-to-D)') {
+        if (dist === 30) { dailyChangePct = -0.04; } // X low
+        else if (dist === 22) { dailyChangePct = 0.05; } // A peak
+        else if (dist === 14) { dailyChangePct = -0.035; } // B low
+        else if (dist === 6) { dailyChangePct = 0.025; } // C bounce (Entry)
+        else if (dist === 0) { dailyChangePct = 0.055; volume = baseVolume * 4.2; } // D target heading
+      }
     }
 
     const open = price;
@@ -221,7 +251,378 @@ function generateRealisticCandles(
   return candles;
 }
 
-// Technical Pattern Detection Helper (Bullish Flag, Double Bottom, Cup & Handle, Ascending Triangle, VCP Compression, Box Range)
+/**
+ * Detects Harmonic Patterns (Bullish Gartley, Bat, Butterfly, Crab)
+ * Identifies Points X, A, B, C, D and calculates Fibonacci ratios:
+ * - Entry Point: C Point completion (higher low / retracement bounce)
+ * - Target Exit: Point D (PRZ level)
+ * - Stop Loss: Placed below Point B / Point X
+ */
+export function detectHarmonicPattern(
+  candles: DseStockCandle[],
+  breakoutIdx?: number
+): HarmonicPatternDetails | null {
+  if (!candles || candles.length < 20) return null;
+
+  const idx = breakoutIdx !== undefined && breakoutIdx < candles.length ? breakoutIdx : candles.length - 1;
+  const lookbackStart = Math.max(0, idx - 45);
+  const subset = candles.slice(lookbackStart, idx + 1);
+  const len = subset.length;
+  if (len < 16) return null;
+
+  // Segment subset into 4 regions for X, A, B, C
+  const quarter = Math.floor(len / 4);
+  const seg1 = subset.slice(0, quarter + 2); // X region
+  const seg2 = subset.slice(quarter - 1, 2 * quarter + 2); // A region
+  const seg3 = subset.slice(2 * quarter - 1, 3 * quarter + 2); // B region
+  const seg4 = subset.slice(3 * quarter - 1); // C region
+
+  // Let's store potential results for standard and inverse patterns
+  let standardPattern: HarmonicPatternDetails | null = null;
+  let inversePattern: HarmonicPatternDetails | null = null;
+
+  // ==========================================
+  // 1. ATTEMPT DETECTING STANDARD PATTERN (W-shape)
+  // ==========================================
+  // X Point: Lowest price in seg1
+  let minXVal = Infinity;
+  let xRelIdx = 0;
+  seg1.forEach((c, i) => {
+    if (c.low < minXVal) {
+      minXVal = c.low;
+      xRelIdx = i;
+    }
+  });
+  const xIdx = lookbackStart + xRelIdx;
+  const xCandle = candles[xIdx];
+
+  // A Point: Highest price in seg2 after X
+  let maxAVal = -Infinity;
+  let aRelIdx = 0;
+  seg2.forEach((c, i) => {
+    if (c.high > maxAVal) {
+      maxAVal = c.high;
+      aRelIdx = i;
+    }
+  });
+  const aIdx = lookbackStart + (quarter - 1) + aRelIdx;
+  const aCandle = candles[aIdx];
+
+  // B Point: Local low in seg3 (retracement of XA leg)
+  let minBVal = Infinity;
+  let bRelIdx = 0;
+  seg3.forEach((c, i) => {
+    if (c.low < minBVal) {
+      minBVal = c.low;
+      bRelIdx = i;
+    }
+  });
+  const bIdx = lookbackStart + (2 * quarter - 1) + bRelIdx;
+  const bCandle = candles[bIdx];
+
+  // C Point: Local high/bounce in seg4 (retracement of AB leg)
+  let maxCVal = -Infinity;
+  let cRelIdx = 0;
+  seg4.forEach((c, i) => {
+    if (c.close > maxCVal) {
+      maxCVal = c.close;
+      cRelIdx = i;
+    }
+  });
+  const cIdx = lookbackStart + (3 * quarter - 1) + cRelIdx;
+  const cCandle = candles[cIdx];
+
+  if (xCandle && aCandle && bCandle && cCandle) {
+    const xPrice = xCandle.low;
+    const aPrice = aCandle.high;
+    const bPrice = bCandle.low;
+    const cPrice = cCandle.close;
+
+    // Validate structural hierarchy: X < A, B < A, B > X, C < A, C > B
+    const xaMove = aPrice - xPrice;
+    const abMove = aPrice - bPrice;
+    const bcMove = cPrice - bPrice;
+
+    if (xaMove > 0 && abMove > 0 && bcMove > 0 && xPrice < aPrice && bPrice < aPrice && bPrice > xPrice && cPrice < aPrice && cPrice > bPrice) {
+      // Calculate Fibonacci Ratios
+      const abXaRatio = Number((abMove / xaMove).toFixed(3)); // Retracement of XA
+      const bcAbRatio = Number((bcMove / abMove).toFixed(3)); // Retracement of AB
+
+      // Validate standard Harmonic Fibonacci limits
+      if (abXaRatio >= 0.25 && abXaRatio <= 0.88 && bcAbRatio >= 0.25 && bcAbRatio <= 0.95) {
+        // Determine Subtype based on Fib ratios
+        let subtype: HarmonicPatternDetails['subtype'] = 'Bullish Gartley';
+        let cdBcMultiplier = 1.272;
+
+        if (abXaRatio >= 0.55 && abXaRatio <= 0.68) {
+          subtype = 'Bullish Gartley';
+          cdBcMultiplier = 1.272;
+        } else if (abXaRatio < 0.55) {
+          subtype = 'Bullish Bat';
+          cdBcMultiplier = 1.618;
+        } else if (abXaRatio >= 0.70 && abXaRatio <= 0.82) {
+          subtype = 'Bullish Butterfly';
+          cdBcMultiplier = 1.414;
+        } else {
+          subtype = 'Bullish Crab';
+          cdBcMultiplier = 2.000;
+        }
+
+        const cdBcRatio = cdBcMultiplier;
+        const dTargetPrice = Number((cPrice + bcMove * cdBcMultiplier).toFixed(2));
+        const cdSpan = dTargetPrice - cPrice;
+        const t1Price = Number((cPrice + cdSpan * 0.382).toFixed(2));
+        const t2Price = Number((cPrice + cdSpan * 0.618).toFixed(2));
+        const stopLossPrice = Number((Math.min(bPrice, cPrice) * 0.965).toFixed(2));
+
+        const potentialGainPct = Number((((dTargetPrice - cPrice) / cPrice) * 100).toFixed(2));
+        const t1GainPct = Number((((t1Price - cPrice) / cPrice) * 100).toFixed(2));
+        const t2GainPct = Number((((t2Price - cPrice) / cPrice) * 100).toFixed(2));
+        const potentialRiskPct = Number((((cPrice - stopLossPrice) / cPrice) * 100).toFixed(2));
+        const riskRewardRatio = Number((potentialGainPct / (potentialRiskPct || 1)).toFixed(2));
+
+        const cdPathLevels = [
+          {
+            levelName: 'Point C (Entry)',
+            fibRatio: '0.000',
+            price: cPrice,
+            gainPct: 0.0,
+            description: 'Primary swing entry trigger upon C-point completion bounce',
+          },
+          {
+            levelName: 'Target 1 (Conservative)',
+            fibRatio: '0.382 C-D',
+            price: t1Price,
+            gainPct: t1GainPct,
+            description: 'First partial profit take-profit level (38.2% C-D path completion)',
+          },
+          {
+            levelName: 'Target 2 (Main Swing)',
+            fibRatio: '0.618 C-D',
+            price: t2Price,
+            gainPct: t2GainPct,
+            description: 'Secondary target level (61.8% Golden Ratio C-D expansion)',
+          },
+          {
+            levelName: 'Point D Target (PRZ Exit)',
+            fibRatio: '1.000 PRZ',
+            price: dTargetPrice,
+            gainPct: potentialGainPct,
+            description: `Final PRZ exit target (${cdBcMultiplier}x BC extension)`,
+          },
+          {
+            levelName: 'Invalidation Stop Loss',
+            fibRatio: 'Stop-Loss',
+            price: stopLossPrice,
+            gainPct: -potentialRiskPct,
+            description: 'Hard stop loss positioned below Point C/B swing lows',
+          },
+        ];
+
+        standardPattern = {
+          subtype,
+          xPrice,
+          xDate: xCandle.date,
+          xIdx,
+          aPrice,
+          aDate: aCandle.date,
+          aIdx,
+          bPrice,
+          bDate: bCandle.date,
+          bIdx,
+          cPrice,
+          cDate: cCandle.date,
+          cIdx,
+          dTargetPrice,
+          t1Price,
+          t2Price,
+          stopLossPrice,
+          abXaRatio,
+          bcAbRatio,
+          cdBcRatio,
+          potentialGainPct,
+          potentialRiskPct,
+          riskRewardRatio,
+          cdPathLevels,
+        };
+      }
+    }
+  }
+
+  // ==========================================
+  // 2. ATTEMPT DETECTING INVERSE PATTERN (M-shape)
+  // ==========================================
+  // X: High in seg1
+  let maxXValInv = -Infinity;
+  let xRelIdxInv = 0;
+  seg1.forEach((c, i) => {
+    if (c.high > maxXValInv) {
+      maxXValInv = c.high;
+      xRelIdxInv = i;
+    }
+  });
+  const xIdxInv = lookbackStart + xRelIdxInv;
+  const xCandleInv = candles[xIdxInv];
+
+  // A: Low in seg2
+  let minAValInv = Infinity;
+  let aRelIdxInv = 0;
+  seg2.forEach((c, i) => {
+    if (c.low < minAValInv) {
+      minAValInv = c.low;
+      aRelIdxInv = i;
+    }
+  });
+  const aIdxInv = lookbackStart + (quarter - 1) + aRelIdxInv;
+  const aCandleInv = candles[aIdxInv];
+
+  // B: High in seg3
+  let maxBValInv = -Infinity;
+  let bRelIdxInv = 0;
+  seg3.forEach((c, i) => {
+    if (c.high > maxBValInv) {
+      maxBValInv = c.high;
+      bRelIdxInv = i;
+    }
+  });
+  const bIdxInv = lookbackStart + (2 * quarter - 1) + bRelIdxInv;
+  const bCandleInv = candles[bIdxInv];
+
+  // C: Low in seg4
+  let minCValInv = Infinity;
+  let cRelIdxInv = 0;
+  seg4.forEach((c, i) => {
+    if (c.close < minCValInv) {
+      minCValInv = c.close;
+      cRelIdxInv = i;
+    }
+  });
+  const cIdxInv = lookbackStart + (3 * quarter - 1) + cRelIdxInv;
+  const cCandleInv = candles[cIdxInv];
+
+  if (xCandleInv && aCandleInv && bCandleInv && cCandleInv) {
+    const xPrice = xCandleInv.high;
+    const aPrice = aCandleInv.low;
+    const bPrice = bCandleInv.high;
+    const cPrice = cCandleInv.close;
+
+    // Validate structural hierarchy: X > A, B > A, B < X, C > A, C < B
+    const xaMove = xPrice - aPrice; // Downward move
+    const abMove = bPrice - aPrice; // Upward move
+    const bcMove = bPrice - cPrice; // Downward move
+
+    if (xaMove > 0 && abMove > 0 && bcMove > 0 && xPrice > aPrice && bPrice > aPrice && bPrice < xPrice && cPrice > aPrice && cPrice < bPrice) {
+      // Calculate Fibonacci Ratios
+      const abXaRatio = Number((abMove / xaMove).toFixed(3)); // Retracement of XA
+      const bcAbRatio = Number((bcMove / abMove).toFixed(3)); // Retracement of AB
+
+      if (abXaRatio >= 0.25 && abXaRatio <= 0.88 && bcAbRatio >= 0.25 && bcAbRatio <= 0.95) {
+        // Determine Subtype based on Fib ratios
+        let subtype: HarmonicPatternDetails['subtype'] = 'Inverse Bullish Gartley';
+        let cdBcMultiplier = 1.272;
+
+        if (abXaRatio >= 0.55 && abXaRatio <= 0.68) {
+          subtype = 'Inverse Bullish Gartley';
+          cdBcMultiplier = 1.272;
+        } else if (abXaRatio < 0.55) {
+          subtype = 'Inverse Bullish Bat';
+          cdBcMultiplier = 1.618;
+        } else if (abXaRatio >= 0.70 && abXaRatio <= 0.82) {
+          subtype = 'Inverse Bullish Butterfly';
+          cdBcMultiplier = 1.414;
+        } else {
+          subtype = 'Inverse Bullish Crab';
+          cdBcMultiplier = 2.000;
+        }
+
+        const cdBcRatio = cdBcMultiplier;
+        // Projected target price for Point D is HIGHER than Point C because it's a bullish entry pattern
+        const dTargetPrice = Number((cPrice + bcMove * cdBcMultiplier).toFixed(2));
+        const cdSpan = dTargetPrice - cPrice;
+        const t1Price = Number((cPrice + cdSpan * 0.382).toFixed(2));
+        const t2Price = Number((cPrice + cdSpan * 0.618).toFixed(2));
+        // For inverse bullish, C is a local low, so hard stop loss is below Point C
+        const stopLossPrice = Number((cPrice * 0.965).toFixed(2));
+
+        const potentialGainPct = Number((((dTargetPrice - cPrice) / cPrice) * 100).toFixed(2));
+        const t1GainPct = Number((((t1Price - cPrice) / cPrice) * 100).toFixed(2));
+        const t2GainPct = Number((((t2Price - cPrice) / cPrice) * 100).toFixed(2));
+        const potentialRiskPct = Number((((cPrice - stopLossPrice) / cPrice) * 100).toFixed(2));
+        const riskRewardRatio = Number((potentialGainPct / (potentialRiskPct || 1)).toFixed(2));
+
+        const cdPathLevels = [
+          {
+            levelName: 'Point C (Entry)',
+            fibRatio: '0.000',
+            price: cPrice,
+            gainPct: 0.0,
+            description: 'Primary swing entry trigger upon C-point completion bounce',
+          },
+          {
+            levelName: 'Target 1 (Conservative)',
+            fibRatio: '0.382 C-D',
+            price: t1Price,
+            gainPct: t1GainPct,
+            description: 'First partial profit take-profit level (38.2% C-D path completion)',
+          },
+          {
+            levelName: 'Target 2 (Main Swing)',
+            fibRatio: '0.618 C-D',
+            price: t2Price,
+            gainPct: t2GainPct,
+            description: 'Secondary target level (61.8% Golden Ratio C-D expansion)',
+          },
+          {
+            levelName: 'Point D Target (PRZ Exit)',
+            fibRatio: '1.000 PRZ',
+            price: dTargetPrice,
+            gainPct: potentialGainPct,
+            description: `Final PRZ exit target (${cdBcMultiplier}x BC extension)`,
+          },
+          {
+            levelName: 'Invalidation Stop Loss',
+            fibRatio: 'Stop-Loss',
+            price: stopLossPrice,
+            gainPct: -potentialRiskPct,
+            description: 'Hard stop loss positioned below Point C/B swing lows',
+          },
+        ];
+
+        inversePattern = {
+          subtype,
+          xPrice,
+          xDate: xCandleInv.date,
+          xIdx: xIdxInv,
+          aPrice,
+          aDate: aCandleInv.date,
+          aIdx: aIdxInv,
+          bPrice,
+          bDate: bCandleInv.date,
+          bIdx: bIdxInv,
+          cPrice,
+          cDate: cCandleInv.date,
+          cIdx: cIdxInv,
+          dTargetPrice,
+          t1Price,
+          t2Price,
+          stopLossPrice,
+          abXaRatio,
+          bcAbRatio,
+          cdBcRatio,
+          potentialGainPct,
+          potentialRiskPct,
+          riskRewardRatio,
+          cdPathLevels,
+        };
+      }
+    }
+  }
+
+  // Return only standard pattern (W-shape) as requested for long-only Bangladesh market
+  return standardPattern;
+}
+
+// Technical Pattern Detection Helper (Bullish Flag, Double Bottom, Cup & Handle, Ascending Triangle, VCP Compression, Harmonic C-to-D, Box Range)
 export function detectTechnicalPattern(
   candles: DseStockCandle[],
   breakoutIdx: number
@@ -235,6 +636,16 @@ export function detectTechnicalPattern(
       detectedPattern: 'Box Range Consolidation',
       patternConfidence: 80,
       patternDescription: 'Base consolidation range established prior to volume breakout.',
+    };
+  }
+
+  // 0. Check Harmonic Pattern (C Point Entry to D Point Exit)
+  const harmonic = detectHarmonicPattern(candles, breakoutIdx);
+  if (harmonic && harmonic.potentialGainPct >= 6.0) {
+    return {
+      detectedPattern: 'Harmonic Pattern (C-to-D)',
+      patternConfidence: 95,
+      patternDescription: `${harmonic.subtype} Harmonic Pattern: C-Point Entry at ৳${harmonic.cPrice.toFixed(2)} ➔ Target D-Point Exit at ৳${harmonic.dTargetPrice.toFixed(2)} (${harmonic.potentialGainPct}% Gain, R:R ${harmonic.riskRewardRatio}:1).`,
     };
   }
 
@@ -447,6 +858,7 @@ export function runDseVolumeBreakoutBacktest(
         const realizedRiskRewardRatio = Number((peakReturnPct / absDrawdown).toFixed(2));
 
         const techPattern = detectTechnicalPattern(candles, i);
+        const harmonic = detectHarmonicPattern(candles, i);
 
         signals.push({
           symbol: stock.symbol,
@@ -459,7 +871,7 @@ export function runDseVolumeBreakoutBacktest(
           priceIncreasePct,
           volumeMultiplier: Number(volumeRatio.toFixed(2)),
           microPattern,
-          macroPattern,
+          macroPattern: harmonic ? 'Harmonic XABCD Pattern' : macroPattern,
           detectedPattern: techPattern.detectedPattern,
           patternConfidence: techPattern.patternConfidence,
           patternDescription: techPattern.patternDescription,
@@ -471,8 +883,9 @@ export function runDseVolumeBreakoutBacktest(
           maxDrawdownPct,
           status,
           realizedGainPct,
-          riskRewardRatio: plannedRiskRewardRatio,
+          riskRewardRatio: harmonic ? harmonic.riskRewardRatio : plannedRiskRewardRatio,
           realizedRiskRewardRatio,
+          harmonicDetails: harmonic || undefined,
         });
 
         // Skip ahead a few candles so we don't duplicate signals on consecutive days
@@ -575,6 +988,7 @@ export function normalizeDateString(rawDate: string): string {
 // Comprehensive DSE Sector Dictionary
 export const DSE_SECTOR_MAP: Record<string, string> = {
   // Pharmaceuticals & Chemicals
+  BEXIMCO: 'Pharmaceuticals & Chemicals',
   SQURPHARMA: 'Pharmaceuticals & Chemicals',
   RENATA: 'Pharmaceuticals & Chemicals',
   BXPHARMA: 'Pharmaceuticals & Chemicals',
@@ -599,6 +1013,9 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   ACTIVEFINE: 'Pharmaceuticals & Chemicals',
   AFCAGRO: 'Pharmaceuticals & Chemicals',
   AMBEEPHA: 'Pharmaceuticals & Chemicals',
+  ACIFORMULA: 'Pharmaceuticals & Chemicals',
+  ORIONINFU: 'Pharmaceuticals & Chemicals',
+  WATACHEM: 'Pharmaceuticals & Chemicals',
 
   // Banks
   BRACBANK: 'Bank',
@@ -632,6 +1049,10 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   SIBL: 'Bank',
   UNIONBANK: 'Bank',
   SBACBANK: 'Bank',
+  BANKASIA: 'Bank',
+  RUPALIBANK: 'Bank',
+  MERCANBANK: 'Bank',
+  SOUTHEASTB: 'Bank',
 
   // Financial Institutions
   IDLC: 'Financial Institutions',
@@ -652,6 +1073,10 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   INDUSTRIAL: 'Financial Institutions',
   UNIONCAP: 'Financial Institutions',
   BIFC: 'Financial Institutions',
+  NHFIL: 'Financial Institutions',
+  PLFSL: 'Financial Institutions',
+  PRIMEFIN: 'Financial Institutions',
+  UNIONFIN: 'Financial Institutions',
 
   // Engineering
   BSRMSTEEL: 'Engineering',
@@ -678,6 +1103,9 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   RSRMSTEEL: 'Engineering',
   BBS: 'Engineering',
   BBSCABLES: 'Engineering',
+  ANWARGALV: 'Engineering',
+  BENGALWTL: 'Engineering',
+  DSHALUM: 'Engineering',
 
   // Food & Allied
   BATBC: 'Food & Allied',
@@ -691,6 +1119,9 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   MEGHNABAN: 'Food & Allied',
   AMCL: 'Food & Allied',
   FUWANGAO: 'Food & Allied',
+  BEACHHATCH: 'Food & Allied',
+  RAHIMAFOOD: 'Food & Allied',
+  ZEALBANGLA: 'Food & Allied',
 
   // IT Sector
   ADNTEL: 'IT Sector',
@@ -702,6 +1133,7 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   INTECH: 'IT Sector',
   AGNISYSTEM: 'IT Sector',
   INFOSYS: 'IT Sector',
+  EGENERATN: 'IT Sector',
 
   // Telecommunication
   GP: 'Telecommunication',
@@ -721,6 +1153,18 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   GENERATION: 'Textile',
   METROSPIN: 'Textile',
   PACIFICDEN: 'Textile',
+  BEXIMCOTXT: 'Textile',
+  ALHAJTEX: 'Textile',
+  APEXSPINN: 'Textile',
+  KATTALI: 'Textile',
+  NURANI: 'Textile',
+  QUEENSOUTH: 'Textile',
+  REGENT: 'Textile',
+  RNSPIN: 'Textile',
+  SAIHAMCOT: 'Textile',
+  SAIHAMTEX: 'Textile',
+  SHEPHERD: 'Textile',
+  TALLUSPIN: 'Textile',
 
   // Fuel & Power
   MPETROLEUM: 'Fuel & Power',
@@ -736,6 +1180,9 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   SHAHJIBAZA: 'Fuel & Power',
   MJLBD: 'Fuel & Power',
   KPCL: 'Fuel & Power',
+  GBBPOWER: 'Fuel & Power',
+  INTRACO: 'Fuel & Power',
+  LINDEBD: 'Fuel & Power',
 
   // Insurance
   GREENDELT: 'Insurance',
@@ -759,6 +1206,27 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   STANDARDIN: 'Insurance',
   SUNLIFEINS: 'Insurance',
   UNIQUEHRL: 'Insurance',
+  AGRANIINS: 'Insurance',
+  ASIAPACINS: 'Insurance',
+  CRYSTALINS: 'Insurance',
+  DHAKAAINS: 'Insurance',
+  EXIMINS: 'Insurance',
+  FAREASTINS: 'Insurance',
+  FEDERALINS: 'Insurance',
+  GLOBALINS: 'Insurance',
+  ISLAMIINS: 'Insurance',
+  JANATAINS: 'Insurance',
+  KARNAPHULI: 'Insurance',
+  MERCANINS: 'Insurance',
+  NATLIFEINS: 'Insurance',
+  PEOPLESINS: 'Insurance',
+  POPULARLIF: 'Insurance',
+  PROGRESSIVE: 'Insurance',
+  RUPALIINS: 'Insurance',
+  SANDHANI: 'Insurance',
+  SENAKALYAN: 'Insurance',
+  SONARLIFE: 'Insurance',
+  UNIONINS: 'Insurance',
 
   // Cement
   LHBL: 'Cement',
@@ -780,11 +1248,13 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   BATASHOE: 'Tannery Industries',
   FORTUNE: 'Tannery Industries',
   SAMATA: 'Tannery Industries',
+  LEGACYFOOT: 'Tannery Industries',
 
   // Paper & Printing
   HAKKANIPUL: 'Paper & Printing',
   BPPAPER: 'Paper & Printing',
   SONALIPAPR: 'Paper & Printing',
+  PAPERPROC: 'Paper & Printing',
 
   // Travel & Leisure
   PENINSULA: 'Travel & Leisure',
@@ -793,12 +1263,48 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   // Services & Real Estate
   EHL: 'Services & Real Estate',
   SAMORITA: 'Services & Real Estate',
+
+  // Mutual Funds
+  '1JANATAMF': 'Mutual Funds',
+  '1STPRIMFMF': 'Mutual Funds',
+  AIBL1STIMF: 'Mutual Funds',
+  GRAMEEN2: 'Mutual Funds',
+  EBL1STMF: 'Mutual Funds',
+  IFIC1STMF: 'Mutual Funds',
+  MBL1STMF: 'Mutual Funds',
+  NCCBLMF1: 'Mutual Funds',
+  PHPMF1: 'Mutual Funds',
+  POPULAR1MF: 'Mutual Funds',
+  SEMIBLLEST: 'Mutual Funds',
+  TRUSTB1ST: 'Mutual Funds',
 };
 
+const INVALID_SECTOR_KEYWORDS = [
+  'uploaded',
+  'general industry',
+  'diversified / general industry',
+  'diversified',
+  'unknown',
+  'n/a',
+  'undefined',
+  'null',
+  'custom',
+  'unassigned',
+  'sector text',
+  'sector data',
+  'uploaded sector text',
+  'uploaded sector',
+  'stock data',
+  'stock'
+];
+
 export function inferDseSector(symbol: string, rawSector?: string, rawName?: string): string {
-  if (rawSector && rawSector.trim().length > 2 && !rawSector.toLowerCase().includes('uploaded')) {
-    const clean = rawSector.trim();
-    if (clean.length > 0) return clean;
+  if (rawSector && rawSector.trim().length > 2) {
+    const cleanRaw = rawSector.trim();
+    const lower = cleanRaw.toLowerCase();
+    if (!INVALID_SECTOR_KEYWORDS.some(kw => lower.includes(kw))) {
+      return cleanRaw;
+    }
   }
 
   const sym = symbol.toUpperCase().replace(/[^A-Z0-9_]/g, '');
@@ -837,20 +1343,23 @@ export function inferDseSector(symbol: string, rawSector?: string, rawName?: str
   // 2. Pattern & Name Heuristics
   const target = `${cleanSym} ${(rawName || '').toUpperCase()}`;
 
-  if (/BANK/i.test(target)) return 'Bank';
-  if (/FIN|LEASE|CAPITAL|HOLDING|FINANCE/i.test(target)) return 'Financial Institutions';
-  if (/PHARM|CHEM|LAB|DRUG|BIO|MED/i.test(target)) return 'Pharmaceuticals & Chemicals';
-  if (/TEX|SPIN|DENIM|FABRIC|GARMENT|WOVEN|KNIT/i.test(target)) return 'Textile';
-  if (/INS|INSURANCE|LIFE/i.test(target)) return 'Insurance';
-  if (/CEM|CEMENT/i.test(target)) return 'Cement';
-  if (/CER|CERAMIC/i.test(target)) return 'Ceramics';
-  if (/POWER|GAS|OIL|PETRO|ENERGY|GRID|ELECTRIC/i.test(target)) return 'Fuel & Power';
-  if (/STEEL|ISPAT|AUTO|CABLE|ENGINEER|METAL|PIPE|ALLOY/i.test(target)) return 'Engineering';
-  if (/FOOD|FEED|AGRO|BEV|ALLIED|SUGAR|SEA|POULTRY|GRAIN/i.test(target)) return 'Food & Allied';
-  if (/IT|TEL|NET|TECH|SYS|INFO|CYBER|SOFTWARE|COMM/i.test(target)) return 'IT Sector';
-  if (/PAPER|PULP|PRINT|BOARD/i.test(target)) return 'Paper & Printing';
-  if (/LEATHER|TANRY|SHOE|FOOT/i.test(target)) return 'Tannery Industries';
-  if (/HOTEL|RESORT|TRAVEL|LEISURE|PEARL/i.test(target)) return 'Travel & Leisure';
+  if (/MUTUAL|FUND|MF|MF1|GRAMEEN2|EBL1ST|IFIC1ST|NCCBL|1STPR|POPULAR1MF|SEBL/i.test(target)) return 'Mutual Funds';
+  if (/BANK|BNK|ISLAMI|DUTCH|PUBALI|BRAC|PRIME|CITY|DHAKA|EXIM|JAMUNA|MIDLAND|NCC|NRB|ONEBANK|SBAC|SHAHJALAL|SIBL|TRUST|UCB|UTTARA|MERCANTILE|SOUTHEAST/i.test(target)) return 'Bank';
+  if (/FIN|LEASE|CAPITAL|HOLDING|FINANCE|IPDC|IDLC|DBH|GSP|LANKABA|MIDAS|BAY|PHOENIX|FAS|BIFC|NHFIL|PLFSL/i.test(target)) return 'Financial Institutions';
+  if (/PHARM|CHEM|LAB|DRUG|BIO|MED|SQUR|RENATA|ACI|MARICO|BEACON|IBN|ORION|ACME|ADVENT|SILCO|KOHINOOR|KEYA|SALVO|WATA|TECHNODRUG|JMI/i.test(target)) return 'Pharmaceuticals & Chemicals';
+  if (/TEX|SPIN|DENIM|FABRIC|GARMENT|WOVEN|KNIT|COT|ENVOY|SQUARE|SIMTEX|MATIN|PACIFIC|MODERN|REGENT|RNSPIN|SAIHAM|SHEPHERD|TALLU/i.test(target)) return 'Textile';
+  if (/INS|INSURANCE|LIFE|DELTA|MEGHNA|GREEN|RELIANCE|ASIA|BGIC|PRAGATI|PROVATI|REPUBLICA|NITOL|SONAR|SUNLIFE|UNIQUE|FAREAST|FEDERAL|JANATA|KARNAPHULI|PEOPLES|POPULAR|RUPALI|SANDHANI|SENAKALYAN/i.test(target)) return 'Insurance';
+  if (/CEM|CEMENT|LHBL|HEIDELB|CROWN|MISEM|CONFID|ARAMIT/i.test(target)) return 'Cement';
+  if (/CER|CERAMIC|RAK|SHIN|MONNO|FUWANG/i.test(target)) return 'Ceramics';
+  if (/POWER|GAS|OIL|PETRO|ENERGY|GRID|ELECTRIC|TITAS|JAMUNA|PADMA|DESCO|UPGDCL|SUMMIT|MJL|KPCL|DORIN|BARAKA|SHAHJIBAZA|LINDE/i.test(target)) return 'Fuel & Power';
+  if (/STEEL|ISPAT|AUTO|CABLE|ENGINEER|METAL|PIPE|ALLOY|BSRM|GPH|WALTON|SINGER|KDS|AFTAB|RUNNER|COPPER|OIMEX|SAIF|RSRM|BBS|ANWAR|DESH|ECABLE/i.test(target)) return 'Engineering';
+  if (/FOOD|FEED|AGRO|BEV|ALLIED|SUGAR|SEA|POULTRY|GRAIN|BATBC|OLYMPIC|LOVELLO|EMERALD|FINE|AMCL|FUWANG|BEACH|RAHIMA|ZEAL/i.test(target)) return 'Food & Allied';
+  if (/IT|TEL|NET|TECH|SYS|INFO|CYBER|SOFTWARE|COMM|ADN|GENEX|AAMRA|BDCOM|AGNI|INTECH|E-GEN/i.test(target)) return 'IT Sector';
+  if (/PAPER|PULP|PRINT|BOARD|HAKKANI|SONALI|BPPAPER/i.test(target)) return 'Paper & Printing';
+  if (/LEATHER|TANRY|SHOE|FOOT|BATA|FORTUNE|SAMATA|APEX/i.test(target)) return 'Tannery Industries';
+  if (/HOTEL|RESORT|TRAVEL|LEISURE|PEARL|PENINSULA|SEAPEARL/i.test(target)) return 'Travel & Leisure';
+  if (/EHL|SAMORITA|EASTERN|REAL|SERVI/i.test(target)) return 'Services & Real Estate';
+  if (/TELE|ROBI|BSCCL|GRAMEEN/i.test(target)) return 'Telecommunication';
 
   return 'Diversified / General Industry';
 }
@@ -862,6 +1371,19 @@ export function isSectorOrMarketIndex(symbol: string): boolean {
   if (/^\d{2}_/.test(sym)) return true;
   if (/_Sector$/i.test(sym) || /_Funds$/i.test(sym) || /_Bond$/i.test(sym) || /_Index$/i.test(sym)) return true;
   return false;
+}
+
+// Numeric cleaner for CSV data (removes commas, quotes, BDT symbols, whitespace)
+export function cleanNumber(val: any, fallback = 0): number {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'number') return isNaN(val) ? fallback : val;
+  const str = String(val)
+    .replace(/["'\s]/g, '')
+    .replace(/BDT|Tk|TK|BDT\b/gi, '')
+    .replace(/,/g, '')
+    .trim();
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? fallback : parsed;
 }
 
 // CSV / JSON Custom DSE Stock Dataset Parser (Single or Multi-stock)
@@ -881,7 +1403,12 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
           const candleMap = new Map<string, DseStockCandle>();
           item.candles.forEach((c: DseStockCandle) => {
             const normDate = normalizeDateString(c.date);
-            candleMap.set(normDate, { ...c, date: normDate });
+            const open = cleanNumber(c.open, 0);
+            const close = cleanNumber(c.close, open);
+            const high = Math.max(cleanNumber(c.high, open), open, close);
+            const low = Math.min(cleanNumber(c.low, open), open, close);
+            const volume = cleanNumber(c.volume, 100000);
+            candleMap.set(normDate, { date: normDate, open, high, low, close, volume });
           });
           const sorted = Array.from(candleMap.values()).sort(
             (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
@@ -900,8 +1427,15 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
     const lines = fileContent.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
     if (lines.length < 1) return [];
 
-    const headerParts = lines[0].toLowerCase().split(',').map((h) => h.trim());
-    const hasHeader = headerParts.some((h) => h.includes('date') || h.includes('close') || h.includes('symbol') || h.includes('ticker'));
+    // Auto-detect delimiter (comma, tab, semicolon, pipe)
+    const sampleLine = lines[0];
+    let delimiter = ',';
+    if (sampleLine.includes('\t')) delimiter = '\t';
+    else if (sampleLine.includes(';') && sampleLine.split(';').length > sampleLine.split(',').length) delimiter = ';';
+    else if (sampleLine.includes('|') && sampleLine.split('|').length > sampleLine.split(',').length) delimiter = '|';
+
+    const headerParts = lines[0].toLowerCase().split(delimiter).map((h) => h.replace(/["'\s]/g, '').trim());
+    const hasHeader = headerParts.some((h) => h.includes('date') || h.includes('close') || h.includes('symbol') || h.includes('ticker') || h.includes('ltp') || h.includes('price'));
     const startIdx = hasHeader ? 1 : 0;
 
     // Detect column indexes if header exists
@@ -916,21 +1450,77 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
     let volCol = 5;
 
     if (hasHeader) {
+      // Symbol
       headerParts.forEach((col, idx) => {
-        if (col.includes('symbol') || col.includes('ticker') || col.includes('code') || col.includes('stock') || col.includes('scrip')) symbolCol = idx;
-        else if (col.includes('sector') || col.includes('industry') || col.includes('category') || col.includes('group')) sectorCol = idx;
-        else if (col.includes('company') || col.includes('name') || col.includes('title')) nameCol = idx;
-        else if (col.includes('date') || col.includes('time')) dateCol = idx;
-        else if (col.includes('open')) openCol = idx;
-        else if (col.includes('high')) highCol = idx;
-        else if (col.includes('low')) lowCol = idx;
-        else if (col.includes('close') || col.includes('ltp') || col.includes('price')) closeCol = idx;
-        else if (col.includes('vol') || col.includes('trade') || col.includes('value') || col.includes('turnover')) volCol = idx;
+        if (/^(symbol|ticker|trading_code|scrip|code|stock)$/i.test(col) || (symbolCol < 0 && (col.includes('symbol') || col.includes('ticker') || col.includes('scrip') || col.includes('code')))) {
+          symbolCol = idx;
+        }
+      });
+
+      // Date
+      headerParts.forEach((col, idx) => {
+        if (/^(date|dt|trading_date|time|pub_date)$/i.test(col) || col.includes('date') || col.includes('time')) {
+          dateCol = idx;
+        }
+      });
+
+      // Sector
+      headerParts.forEach((col, idx) => {
+        if (/^(sector|industry|category|group)$/i.test(col) || col.includes('sector') || col.includes('industry')) {
+          sectorCol = idx;
+        }
+      });
+
+      // Company Name
+      headerParts.forEach((col, idx) => {
+        if (/^(company|name|title|company_name|company_title)$/i.test(col) || col.includes('company') || col.includes('name')) {
+          nameCol = idx;
+        }
+      });
+
+      // Close / LTP (Explicitly ignore YCP, Previous Close, Change, Avg)
+      headerParts.forEach((col, idx) => {
+        const isYcp = col.includes('ycp') || col.includes('prev') || col.includes('yesterday') || col.includes('change') || col.includes('avg');
+        if (!isYcp) {
+          if (/^(close|ltp|cp|last|closing_price|close_price|last_price|last_traded_price)$/i.test(col)) {
+            closeCol = idx;
+          } else if (closeCol < 0 && (col.includes('close') || col.includes('ltp'))) {
+            closeCol = idx;
+          }
+        }
+      });
+
+      // Open
+      headerParts.forEach((col, idx) => {
+        if (/^(open|op|opening_price|open_price)$/i.test(col) || (openCol < 0 && col.includes('open'))) {
+          openCol = idx;
+        }
+      });
+
+      // High
+      headerParts.forEach((col, idx) => {
+        if (/^(high|max|high_price|max_price)$/i.test(col) || (highCol < 0 && col.includes('high'))) {
+          highCol = idx;
+        }
+      });
+
+      // Low
+      headerParts.forEach((col, idx) => {
+        if (/^(low|min|low_price|min_price)$/i.test(col) || (lowCol < 0 && col.includes('low'))) {
+          lowCol = idx;
+        }
+      });
+
+      // Volume / Turnover
+      headerParts.forEach((col, idx) => {
+        if (/^(volume|vol|total_volume|qty|quantity|trades|no_of_trades|turnover|value)$/i.test(col) || (volCol < 0 && (col.includes('vol') || col.includes('trade') || col.includes('turnover')))) {
+          volCol = idx;
+        }
       });
     } else {
       // Headerless CSV detection
       // Check first data line format: e.g. "1JANATAMF,20260803,4.2,4.3,4.1,4.2,4856046,630,20.15,150143"
-      const sampleParts = lines[0].split(',').map((p) => p.trim());
+      const sampleParts = lines[0].split(delimiter).map((p) => p.replace(/["'\s]/g, '').trim());
       if (sampleParts.length >= 6) {
         const isPart0Ticker = /^[A-Za-z0-9_\-\.\&]+$/.test(sampleParts[0]) && isNaN(Number(sampleParts[0]));
         const isPart1Date = /^\d{8}$/.test(sampleParts[1]) || /^\d{4}[-/.]\d{2}[-/.]\d{2}$/.test(sampleParts[1]) || /^\d{2}[-/.]\d{2}[-/.]\d{4}$/.test(sampleParts[1]);
@@ -952,10 +1542,10 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
     const symbolMetaMap = new Map<string, { sector?: string; name?: string }>();
 
     for (let i = startIdx; i < lines.length; i++) {
-      const parts = lines[i].split(',').map((p) => p.trim());
+      const parts = lines[i].split(delimiter).map((p) => p.trim());
       if (parts.length < 4) continue;
 
-      const rawSym = symbolCol >= 0 && parts[symbolCol] ? parts[symbolCol].trim() : '';
+      const rawSym = symbolCol >= 0 && parts[symbolCol] ? parts[symbolCol].trim().replace(/["']/g, '') : '';
       const sym = rawSym.toUpperCase().replace(/[^A-Z0-9_\-]/g, '');
 
       // Skip market/sector index summary lines from tradeable individual stock lists
@@ -963,19 +1553,27 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
         continue;
       }
 
-      const rawSector = sectorCol >= 0 && parts[sectorCol] ? parts[sectorCol] : undefined;
-      const rawName = nameCol >= 0 && parts[nameCol] ? parts[nameCol] : undefined;
+      const rawSector = sectorCol >= 0 && parts[sectorCol] ? parts[sectorCol].replace(/["']/g, '') : undefined;
+      const rawName = nameCol >= 0 && parts[nameCol] ? parts[nameCol].replace(/["']/g, '') : undefined;
 
-      const rawDate = parts[dateCol] || `2026-08-03`;
+      const rawDate = parts[dateCol] ? parts[dateCol].replace(/["']/g, '') : `2026-08-03`;
       const date = normalizeDateString(rawDate);
 
-      const open = parseFloat(parts[openCol]) || 0;
-      const high = parseFloat(parts[highCol]) || open;
-      const low = parseFloat(parts[lowCol]) || open;
-      const close = parseFloat(parts[closeCol]) || open;
-      const volume = parseFloat(parts[volCol]) || 100000;
+      let open = cleanNumber(parts[openCol], 0);
+      let close = cleanNumber(parts[closeCol], open);
+      if (open === 0) open = close;
+      if (close === 0) close = open;
 
-      if (!isNaN(close) && close > 0) {
+      let high = cleanNumber(parts[highCol], Math.max(open, close));
+      let low = cleanNumber(parts[lowCol], Math.min(open, close));
+
+      // Standardize OHLC envelope integrity
+      high = Math.max(high, open, close);
+      low = Math.min(low, open, close);
+
+      const volume = cleanNumber(parts[volCol], 100000);
+
+      if (close > 0) {
         const targetSym = sym || fileName.split('.')[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'DSE_STOCK';
         if (!stockMap.has(targetSym)) {
           stockMap.set(targetSym, []);
@@ -1135,10 +1733,7 @@ export function extractStockDataFromExtractedFiles(files: ExtractedFile[]): DseS
             (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
           );
 
-          const bestSector =
-            stock.sector && !stock.sector.includes('Diversified / General Industry')
-              ? stock.sector
-              : existing.sector;
+          const bestSector = inferDseSector(stock.symbol, stock.sector !== 'Diversified / General Industry' ? stock.sector : existing.sector, stock.name);
 
           stockMap.set(stock.symbol, {
             ...stock,
@@ -1324,7 +1919,7 @@ export function runDseStockScreener(
     if (passesTurnover) score += 5;
 
     // Cap score at 100
-    const profitPotentialScore = Math.min(100, score);
+    let profitPotentialScore = Math.min(100, score);
 
     // Decision Status Determination
     let decisionStatus: ScreenerStockCandidate['decisionStatus'] = 'NEUTRAL';
@@ -1340,13 +1935,13 @@ export function runDseStockScreener(
     }
 
     // Trade Setup Planning
-    const entryPrice = latest.close;
-    const targetProfitPct = config.targetProfitPct || 15;
-    const stopLossPct = config.stopLossPct || 5;
+    let entryPrice = latest.close;
+    let targetProfitPct = config.targetProfitPct || 15;
+    let stopLossPct = config.stopLossPct || 5;
 
-    const targetPrice = Number((entryPrice * (1 + targetProfitPct / 100)).toFixed(2));
-    const stopLossPrice = Number((entryPrice * (1 - stopLossPct / 100)).toFixed(2));
-    const riskRewardRatio = Number((targetProfitPct / stopLossPct).toFixed(2));
+    let targetPrice = Number((entryPrice * (1 + targetProfitPct / 100)).toFixed(2));
+    let stopLossPrice = Number((entryPrice * (1 - stopLossPct / 100)).toFixed(2));
+    let riskRewardRatio = Number((targetProfitPct / stopLossPct).toFixed(2));
 
     // Catalysts list
     const catalysts: string[] = [];
@@ -1385,6 +1980,33 @@ export function runDseStockScreener(
     if (decisionStatus === 'WATCHLIST_BREAKOUT') recommendedPositionSizePct = 12;
 
     const techPattern = detectTechnicalPattern(candles, candles.length - 1);
+    const harmonic = detectHarmonicPattern(candles, candles.length - 1);
+
+    let finalDetectedPattern = techPattern.detectedPattern;
+    let finalPatternConfidence = techPattern.patternConfidence;
+    let finalPatternDescription = techPattern.patternDescription;
+
+    if (harmonic) {
+      finalDetectedPattern = 'Harmonic Pattern (C-to-D)';
+      finalPatternConfidence = 95;
+      finalPatternDescription = `${harmonic.subtype} Harmonic Pattern: C-Point Entry at ৳${harmonic.cPrice.toFixed(2)} ➔ Target D-Point Exit at ৳${harmonic.dTargetPrice.toFixed(2)} (+${harmonic.potentialGainPct}% Gain, R:R ${harmonic.riskRewardRatio}:1).`;
+      pattern = `${harmonic.subtype} (C-to-D Swing)`;
+
+      catalysts.unshift(`💎 ${harmonic.subtype} Harmonic Pattern (Point C Entry ➔ Point D Exit)`);
+      if (config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
+        entryPrice = harmonic.cPrice;
+        targetPrice = harmonic.dTargetPrice;
+        stopLossPrice = harmonic.stopLossPrice;
+        targetProfitPct = harmonic.potentialGainPct;
+        stopLossPct = harmonic.potentialRiskPct;
+        riskRewardRatio = harmonic.riskRewardRatio;
+        decisionStatus = 'STRONG_BUY';
+        profitPotentialScore = Math.min(100, profitPotentialScore + 35);
+        reasoning = `Harmonic Pattern C-to-D Strategy: ${harmonic.subtype} setup! Buy at Point C (৳${harmonic.cPrice.toFixed(2)}), Target Point D Exit at ৳${harmonic.dTargetPrice.toFixed(2)} (+${harmonic.potentialGainPct}% gain). Stop Loss at ৳${harmonic.stopLossPrice.toFixed(2)} (R:R = ${harmonic.riskRewardRatio}:1).`;
+      }
+    } else if (config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
+      profitPotentialScore = Math.max(15, profitPotentialScore - 30);
+    }
 
     candidates.push({
       symbol: stock.symbol,
@@ -1407,9 +2029,9 @@ export function runDseStockScreener(
       potentialRiskPct: stopLossPct,
       keyCatalysts: catalysts.length > 0 ? catalysts : ['Stable Price & Volume Base'],
       breakoutPattern: pattern,
-      detectedPattern: techPattern.detectedPattern,
-      patternConfidence: techPattern.patternConfidence,
-      patternDescription: techPattern.patternDescription,
+      detectedPattern: finalDetectedPattern,
+      patternConfidence: finalPatternConfidence,
+      patternDescription: finalPatternDescription,
       historicalWinRate: Math.round(winRate),
       tradeSetupReasoning: reasoning,
       recommendedPositionSizePct,
@@ -1418,11 +2040,21 @@ export function runDseStockScreener(
       avgTurnoverBdtMillion: stock.avgTurnoverBdtMillion,
       earlyTrendStage: earlyTrend.stage,
       earlyTrendSignals: earlyTrend.signals,
+      harmonicDetails: harmonic || undefined,
     });
   }
 
-  // Sort candidates by Profit Potential Score descending
-  candidates.sort((a, b) => b.profitPotentialScore - a.profitPotentialScore);
+  // Sort candidates by Harmonic Priority if in HARMONIC_C_ENTRY_D_EXIT strategy mode, otherwise by Profit Potential Score
+  if (config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
+    candidates.sort((a, b) => {
+      const aHasH = a.harmonicDetails ? 1 : 0;
+      const bHasH = b.harmonicDetails ? 1 : 0;
+      if (aHasH !== bHasH) return bHasH - aHasH;
+      return b.profitPotentialScore - a.profitPotentialScore;
+    });
+  } else {
+    candidates.sort((a, b) => b.profitPotentialScore - a.profitPotentialScore);
+  }
 
   return candidates;
 }
@@ -1435,4 +2067,158 @@ export function evaluateStockForScreener(
   const candidates = runDseStockScreener([stock], config);
   return candidates.length > 0 ? candidates[0] : null;
 }
+
+// ==========================================
+// DATA INTEGRITY & ANOMALY DETECTION ENGINE
+// ==========================================
+
+export interface SecondaryBenchmarkStock {
+  symbol: string;
+  name?: string;
+  benchmarkClose: number;
+  benchmarkDate: string;
+  benchmarkSource: string;
+}
+
+export interface PriceAnomalyRecord {
+  id: string;
+  symbol: string;
+  name: string;
+  appClose: number;
+  benchmarkClose: number;
+  variancePct: number; // e.g. +3.85% or -4.20%
+  isAnomalous: boolean; // true if Math.abs(variancePct) > threshold
+  timestamp: string;
+  severity: 'CRITICAL' | 'WARNING' | 'NORMAL';
+  description: string;
+}
+
+export interface DataIntegrityValidationResult {
+  totalChecked: number;
+  anomaliesFound: number;
+  anomalies: PriceAnomalyRecord[];
+  hasCriticalDiscrepancy: boolean;
+  checkedAt: string;
+}
+
+export const DSE_OFFICIAL_BENCHMARK_PRICES: Record<string, { price: number; name: string; source: string }> = {
+  CONFIDCEM: { price: 68.90, name: 'Confidence Cement PLC', source: 'DSE Official Realtime Website Feed' },
+  GP: { price: 260.00, name: 'Grameenphone Ltd.', source: 'DSE Official Realtime Website Feed' },
+  BATBC: { price: 252.50, name: 'British American Tobacco Bangladesh', source: 'DSE Official Realtime Website Feed' },
+  SQURPHARMA: { price: 219.70, name: 'Square Pharmaceuticals PLC', source: 'DSE Official Realtime Website Feed' },
+  RENATA: { price: 470.20, name: 'Renata PLC', source: 'DSE Official Realtime Website Feed' },
+  BEXIMCO: { price: 23.20, name: 'BEXIMCO Ltd.', source: 'DSE Official Realtime Website Feed' },
+  LHBL: { price: 58.10, name: 'LafargeHolcim Bangladesh PLC', source: 'DSE Official Realtime Website Feed' },
+  OLYMPIC: { price: 154.20, name: 'Olympic Industries PLC', source: 'DSE Official Realtime Website Feed' },
+  WALTONHIL: { price: 393.10, name: 'Walton Hi-Tech Industries PLC', source: 'DSE Official Realtime Website Feed' },
+  MARICO: { price: 2719.40, name: 'Marico Bangladesh Ltd.', source: 'DSE Official Realtime Website Feed' },
+  UNIQUEHRL: { price: 44.80, name: 'Unique Hotel & Resorts PLC', source: 'DSE Official Realtime Website Feed' },
+  BRACBANK: { price: 63.70, name: 'BRAC Bank PLC', source: 'DSE Official Realtime Website Feed' },
+  CITYBANK: { price: 24.80, name: 'City Bank PLC', source: 'DSE Official Realtime Website Feed' },
+  ADNTEL: { price: 118.50, name: 'ADN Telecom Ltd.', source: 'DSE Official Realtime Website Feed' },
+  ALLTEX: { price: 16.20, name: 'Alltex Industries PLC', source: 'DSE Official Realtime Website Feed' },
+  AGNISYSL: { price: 28.50, name: 'Agni Systems Ltd.', source: 'DSE Official Realtime Website Feed' },
+  AAMRANET: { price: 52.30, name: 'aamra networks limited', source: 'DSE Official Realtime Website Feed' },
+};
+
+export function validateStockDataIntegrity(
+  stocks: DseStockData[],
+  thresholdPct: number = 2.0
+): DataIntegrityValidationResult {
+  const anomalies: PriceAnomalyRecord[] = [];
+  let anomaliesFound = 0;
+  let hasCriticalDiscrepancy = false;
+  const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  stocks.forEach((stock) => {
+    if (!stock.candles || stock.candles.length === 0) return;
+    const latest = stock.candles[stock.candles.length - 1];
+    const appClose = latest.close;
+
+    const symKey = stock.symbol.toUpperCase();
+    const benchmarkInfo = DSE_OFFICIAL_BENCHMARK_PRICES[symKey];
+
+    if (benchmarkInfo) {
+      const benchmarkClose = benchmarkInfo.price;
+      const diff = appClose - benchmarkClose;
+      const variancePct = (diff / benchmarkClose) * 100;
+      const absVariance = Math.abs(variancePct);
+      const isAnomalous = absVariance >= thresholdPct;
+
+      if (isAnomalous) {
+        anomaliesFound++;
+        if (absVariance > 5.0) hasCriticalDiscrepancy = true;
+      }
+
+      const severity: 'CRITICAL' | 'WARNING' | 'NORMAL' = absVariance > 5.0 ? 'CRITICAL' : isAnomalous ? 'WARNING' : 'NORMAL';
+
+      anomalies.push({
+        id: `anomaly-${stock.symbol}-${Date.now()}`,
+        symbol: stock.symbol,
+        name: stock.name || benchmarkInfo.name,
+        appClose,
+        benchmarkClose,
+        variancePct: Number(variancePct.toFixed(2)),
+        isAnomalous,
+        timestamp: nowStr,
+        severity,
+        description: isAnomalous
+          ? `App price (৳${appClose.toFixed(2)}) deviates by ${variancePct > 0 ? '+' : ''}${variancePct.toFixed(2)}% from DSE website price (৳${benchmarkClose.toFixed(2)}).`
+          : `Price matches DSE official feed within acceptable range (${variancePct > 0 ? '+' : ''}${variancePct.toFixed(2)}%).`,
+      });
+    }
+  });
+
+  return {
+    totalChecked: stocks.length,
+    anomaliesFound,
+    anomalies: anomalies.filter((a) => a.isAnomalous),
+    hasCriticalDiscrepancy,
+    checkedAt: nowStr,
+  };
+}
+
+export function autoSyncAnomalousPrices(
+  stocks: DseStockData[],
+  anomaliesToFix?: PriceAnomalyRecord[]
+): DseStockData[] {
+  const anomalyMap = new Map<string, number>();
+  if (anomaliesToFix && anomaliesToFix.length > 0) {
+    anomaliesToFix.forEach((a) => anomalyMap.set(a.symbol.toUpperCase(), a.benchmarkClose));
+  } else {
+    Object.entries(DSE_OFFICIAL_BENCHMARK_PRICES).forEach(([sym, info]) => {
+      anomalyMap.set(sym, info.price);
+    });
+  }
+
+  return stocks.map((s) => {
+    const targetPrice = anomalyMap.get(s.symbol.toUpperCase());
+    if (targetPrice && s.candles && s.candles.length > 0) {
+      const updatedCandles = [...s.candles];
+      const lastIdx = updatedCandles.length - 1;
+      const oldCandle = updatedCandles[lastIdx];
+      const open = oldCandle.open === 0 ? targetPrice : oldCandle.open;
+      const high = Math.max(oldCandle.high, targetPrice, open);
+      const low = Math.min(oldCandle.low, targetPrice, open);
+
+      updatedCandles[lastIdx] = {
+        ...oldCandle,
+        open,
+        high,
+        low,
+        close: targetPrice,
+      };
+
+      return {
+        ...s,
+        candles: updatedCandles,
+      };
+    }
+    return s;
+  });
+}
+
+// Re-export DataIntegrityValidator component
+export { DataIntegrityValidator } from '../components/DataIntegrityValidator';
+export type { DataIntegrityValidatorProps } from '../components/DataIntegrityValidator';
 

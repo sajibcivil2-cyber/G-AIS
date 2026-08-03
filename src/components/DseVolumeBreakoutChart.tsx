@@ -17,6 +17,7 @@ import {
   Clock
 } from 'lucide-react';
 import { DseStockData, DseStockCandle, BacktestConfig, BreakoutSignal } from '../types';
+import { detectHarmonicPattern } from '../utils/dseBacktestEngine';
 
 interface DseVolumeBreakoutChartProps {
   stocks: DseStockData[];
@@ -172,9 +173,33 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
   const [showVolume, setShowVolume] = useState<boolean>(true);
   const [showRsi, setShowRsi] = useState<boolean>(true);
   const [showObv, setShowObv] = useState<boolean>(true);
+  const [showHarmonics, setShowHarmonics] = useState<boolean>(false); // False by default to reduce clutter on load
+  const [showFibLevels, setShowFibLevels] = useState<boolean>(false);
 
   // Hover state
   const [hoveredData, setHoveredData] = useState<ProcessedCandle | null>(null);
+
+  // Responsive dimensions state
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({
+    width: 800,
+    height: 580,
+  });
+
+  // Track container resize dynamically with a ResizeObserver to avoid horizontal compression on timeframe toggle
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      if (!entries || entries.length === 0) return;
+      const { width } = entries[0].contentRect;
+      if (width > 0) {
+        setDimensions({ width, height: 580 });
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   // Active Stock Data
   const currentStock = useMemo(() => {
@@ -251,14 +276,13 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
 
   // Draw Clean D3 Chart
   useEffect(() => {
-    if (!svgRef.current || !containerRef.current || processedCandles.length === 0) return;
+    if (!svgRef.current || processedCandles.length === 0) return;
 
-    const container = containerRef.current;
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
-    const width = container.clientWidth || 800;
-    const height = 580;
+    const width = dimensions.width;
+    const height = dimensions.height;
     const margin = { top: 25, right: 60, bottom: 30, left: 55 };
 
     const chartWidth = width - margin.left - margin.right;
@@ -481,6 +505,209 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
       g.append('text').attr('x', chartWidth + 27).attr('y', yLtp + 3).attr('text-anchor', 'middle').attr('fill', '#ffffff').attr('font-size', '9.5px').attr('font-weight', 'bold').attr('font-family', 'monospace').text(`৳${latestCandle.close}`);
     }
 
+    // --- FIBONACCI RETRACEMENT LEVELS ---
+    if (showFibLevels && processedCandles && processedCandles.length > 0) {
+      const highs = processedCandles.map((c) => c.high);
+      const lows = processedCandles.map((c) => c.low);
+      const swingHigh = Math.max(...highs);
+      const swingLow = Math.min(...lows);
+      const diff = swingHigh - swingLow;
+
+      if (diff > 0) {
+        const fibLevels = [
+          { pct: 0.0, label: '0.0% (Low)', color: '#64748b' },
+          { pct: 0.236, label: '23.6%', color: '#38bdf8' },
+          { pct: 0.382, label: '38.2%', color: '#f59e0b' },
+          { pct: 0.500, label: '50.0%', color: '#10b981' },
+          { pct: 0.618, label: '61.8%', color: '#a855f7' },
+          { pct: 0.786, label: '78.6%', color: '#ec4899' },
+          { pct: 1.000, label: '100.0% (High)', color: '#ef4444' },
+        ];
+
+        fibLevels.forEach((level) => {
+          const priceVal = swingLow + diff * level.pct;
+          const yFib = yScalePrice(priceVal);
+
+          if (yFib >= 0 && yFib <= priceHeight) {
+            g.append('line')
+              .attr('x1', 0)
+              .attr('y1', yFib)
+              .attr('x2', chartWidth)
+              .attr('y2', yFib)
+              .attr('stroke', level.color)
+              .attr('stroke-width', 1)
+              .attr('stroke-dasharray', '3,3')
+              .attr('opacity', 0.6);
+
+            const labelGroup = g.append('g')
+              .attr('transform', `translate(${chartWidth - 95}, ${yFib - 8})`);
+
+            labelGroup.append('rect')
+              .attr('width', 90)
+              .attr('height', 16)
+              .attr('fill', '#020617')
+              .attr('stroke', level.color)
+              .attr('stroke-width', 0.5)
+              .attr('rx', 3)
+              .attr('opacity', 0.9);
+
+            labelGroup.append('text')
+              .attr('x', 45)
+              .attr('y', 11)
+              .attr('text-anchor', 'middle')
+              .attr('fill', '#f1f5f9')
+              .attr('font-size', '8px')
+              .attr('font-weight', 'bold')
+              .attr('font-family', 'monospace')
+              .text(`${level.label}: ৳${priceVal.toFixed(1)}`);
+          }
+        });
+      }
+    }
+
+    // --- HARMONIC PATTERN (C-to-D) OVERLAY & FIBONACCI RETRACEMENT LEVELS ---
+    if (showHarmonics && currentStock && currentStock.candles && currentStock.candles.length > 0) {
+      const harmonic = detectHarmonicPattern(currentStock.candles, currentStock.candles.length - 1);
+      if (harmonic) {
+        // Find visible X coordinate helper
+        const getXCoord = (dateStr: string) => {
+          const idxInProcessed = dates.indexOf(dateStr);
+          if (idxInProcessed !== -1) {
+            return xScale(dateStr)! + xScale.bandwidth() / 2;
+          }
+          // If not in processed window, estimate using index of the date
+          const idxInAll = currentStock.candles.findIndex((c) => c.date === dateStr);
+          const visibleStartIdx = currentStock.candles.findIndex((c) => c.date === dates[0]);
+          if (idxInAll !== -1 && visibleStartIdx !== -1) {
+            const diff = idxInAll - visibleStartIdx;
+            const widthPerBar = chartWidth / dates.length;
+            return diff * widthPerBar;
+          }
+          return null;
+        };
+
+        const xCoordX = getXCoord(harmonic.xDate);
+        const xCoordA = getXCoord(harmonic.aDate);
+        const xCoordB = getXCoord(harmonic.bDate);
+        const xCoordC = getXCoord(harmonic.cDate);
+
+        const yCoordX = yScalePrice(harmonic.xPrice);
+        const yCoordA = yScalePrice(harmonic.aPrice);
+        const yCoordB = yScalePrice(harmonic.bPrice);
+        const yCoordC = yScalePrice(harmonic.cPrice);
+
+        // Define Points Array
+        const hPoints = [
+          { name: 'X', x: xCoordX, y: yCoordX, price: harmonic.xPrice },
+          { name: 'A', x: xCoordA, y: yCoordA, price: harmonic.aPrice },
+          { name: 'B', x: xCoordB, y: yCoordB, price: harmonic.bPrice },
+          { name: 'C', x: xCoordC, y: yCoordC, price: harmonic.cPrice },
+        ];
+
+        // Draw solid X-A-B-C-D pattern skeleton
+        // First draw completed legs (X-A, A-B, B-C)
+        const lineGenerator = d3.line<{ x: number; y: number }>()
+          .x((d) => d.x)
+          .y((d) => d.y);
+
+        const validPoints = hPoints.filter((p) => p.x !== null) as Array<{ name: string; x: number; y: number; price: number }>;
+
+        if (validPoints.length >= 2) {
+          // Draw XA, AB, BC paths with glowing indigo line
+          g.append('path')
+            .datum(validPoints)
+            .attr('fill', 'rgba(99, 102, 241, 0.05)')
+            .attr('stroke', '#6366f1')
+            .attr('stroke-width', 2)
+            .attr('stroke-linejoin', 'round')
+            .attr('opacity', 0.8)
+            .attr('d', lineGenerator);
+
+          // Draw individual triangle shading for visual harmonic geometry (X-A-B and B-C-D)
+          if (xCoordX !== null && xCoordA !== null && xCoordB !== null) {
+            g.append('polygon')
+              .attr('points', `${xCoordX},${yCoordX} ${xCoordA},${yCoordA} ${xCoordB},${yCoordB}`)
+              .attr('fill', 'rgba(99, 102, 241, 0.1)')
+              .attr('stroke', '#6366f1')
+              .attr('stroke-width', 1)
+              .attr('stroke-dasharray', '2,2')
+              .attr('opacity', 0.6);
+          }
+        }
+
+        if (xCoordC !== null) {
+          // Draw a clean horizontal target line for Point D (the main price target)
+          const yTargetD = yScalePrice(harmonic.dTargetPrice);
+          if (yTargetD >= 0 && yTargetD <= priceHeight) {
+            g.append('line')
+              .attr('x1', xCoordC)
+              .attr('y1', yTargetD)
+              .attr('x2', chartWidth)
+              .attr('y2', yTargetD)
+              .attr('stroke', '#ec4899')
+              .attr('stroke-width', 1.5)
+              .attr('stroke-dasharray', '3,3')
+              .attr('opacity', 0.85);
+
+            // Clean, simplified Target Label Badge on the right
+            const labelGroup = g.append('g')
+              .attr('transform', `translate(${chartWidth - 85}, ${yTargetD - 9})`);
+
+            labelGroup.append('rect')
+              .attr('width', 80)
+              .attr('height', 18)
+              .attr('fill', '#0f172a')
+              .attr('stroke', '#ec4899')
+              .attr('stroke-width', 1)
+              .attr('rx', 4)
+              .attr('opacity', 0.95);
+
+            labelGroup.append('text')
+              .attr('x', 40)
+              .attr('y', 12)
+              .attr('text-anchor', 'middle')
+              .attr('fill', '#fdf2f8')
+              .attr('font-size', '9.5px')
+              .attr('font-weight', 'bold')
+              .attr('font-family', 'monospace')
+              .text(`D: ৳${harmonic.dTargetPrice.toFixed(1)}`);
+          }
+        }
+
+        // Draw node circles & text labels for X, A, B, C
+        validPoints.forEach((p) => {
+          g.append('circle')
+            .attr('cx', p.x)
+            .attr('cy', p.y)
+            .attr('r', 5.5)
+            .attr('fill', p.name === 'C' ? '#10b981' : '#4f46e5') // Green for entry C, Purple/blue for others
+            .attr('stroke', '#ffffff')
+            .attr('stroke-width', 1.5);
+
+          g.append('text')
+            .attr('x', p.x)
+            .attr('y', p.y - 9)
+            .attr('text-anchor', 'middle')
+            .attr('fill', '#ffffff')
+            .attr('font-size', '9.5px')
+            .attr('font-weight', 'extrabold')
+            .text(p.name);
+
+          // Small subtitle with price below C node
+          if (p.name === 'C') {
+            g.append('text')
+              .attr('x', p.x)
+              .attr('y', p.y + 16)
+              .attr('text-anchor', 'middle')
+              .attr('fill', '#10b981')
+              .attr('font-size', '8px')
+              .attr('font-weight', 'bold')
+              .text(`C Buy: ৳${p.price.toFixed(1)}`);
+          }
+        });
+      }
+    }
+
     // Pattern Markers (Clean, customizable badge indicators)
     if (showSignals && allProcessedCandles.length > 0) {
       const recent7CutoffIndex = Math.max(0, allProcessedCandles.length - 7);
@@ -515,6 +742,7 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
           else if (p === 'Cup & Handle') { label = 'Cup & Handle'; icon = '🍵'; badgeColor = '#6366f1'; }
           else if (p === 'Ascending Triangle') { label = 'Asc. Triangle'; icon = '🔺'; badgeColor = '#38bdf8'; }
           else if (p === 'VCP Compression') { label = 'VCP Coil'; icon = '⚡'; badgeColor = '#a855f7'; }
+          else if (p === 'Harmonic Pattern (C-to-D)') { label = 'Harmonic C➔D'; icon = '💎'; badgeColor = '#ec4899'; }
         }
 
         const stemLength = 26;
@@ -655,16 +883,29 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
         focusLineY.style('opacity', 0);
         setHoveredData(null);
       });
-  }, [processedCandles, chartType, showBBands, showVolume, showRsi, showObv, showSignals, selectedPatternFilter, showAllWindowMarkers]);
+  }, [
+    processedCandles,
+    chartType,
+    showBBands,
+    showVolume,
+    showRsi,
+    showObv,
+    showSignals,
+    selectedPatternFilter,
+    showAllWindowMarkers,
+    showHarmonics,
+    showFibLevels,
+    dimensions.width,
+    dimensions.height,
+  ]);
 
-  // Handle Window Resize
-  useEffect(() => {
-    const handleResize = () => {
-      setSelectedSymbol((prev) => prev);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  if (!currentStock) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400 font-mono text-sm">
+        No stock data found or pool is empty. Please select a different sector or upload a valid DSE dataset.
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-2xl text-slate-200">
@@ -803,6 +1044,26 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
             >
               OBV
             </button>
+
+            {/* Harmonics */}
+            <button
+              onClick={() => setShowHarmonics(!showHarmonics)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showHarmonics ? 'bg-rose-950/80 text-rose-300 border-rose-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              Harmonics (Bullish W)
+            </button>
+
+            {/* Fib Levels */}
+            <button
+              onClick={() => setShowFibLevels(!showFibLevels)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showFibLevels ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              Fib Levels
+            </button>
           </div>
         </div>
 
@@ -824,22 +1085,31 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
 
             {showSignals && (
               <>
-                {/* Specific Pattern Selector */}
-                <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
-                  <span className="text-slate-400 text-[11px]">Filter Pattern:</span>
-                  <select
-                    value={selectedPatternFilter}
-                    onChange={(e) => setSelectedPatternFilter(e.target.value)}
-                    className="bg-transparent text-emerald-400 font-bold text-xs focus:outline-none cursor-pointer"
-                  >
-                    <option value="ALL" className="bg-slate-900 text-white">All Patterns</option>
-                    <option value="Bullish Flag" className="bg-slate-900 text-white">Bullish Flag 🚩</option>
-                    <option value="Double Bottom" className="bg-slate-900 text-white">Double Bottom Ⓦ</option>
-                    <option value="Cup & Handle" className="bg-slate-900 text-white">Cup & Handle 🍵</option>
-                    <option value="Ascending Triangle" className="bg-slate-900 text-white">Ascending Triangle 🔺</option>
-                    <option value="VCP Compression" className="bg-slate-900 text-white">VCP Coil ⚡</option>
-                    <option value="Volume Surge" className="bg-slate-900 text-white">Volume Surge ⚡</option>
-                  </select>
+                {/* Specific Pattern Chips */}
+                <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+                  {[
+                    { id: 'ALL', label: 'All Markers', icon: '✨' },
+                    { id: 'Bullish Flag', label: 'Flag', icon: '🚩' },
+                    { id: 'Double Bottom', label: 'W-Bottom', icon: 'Ⓦ' },
+                    { id: 'Cup & Handle', label: 'Cup', icon: '🍵' },
+                    { id: 'Ascending Triangle', label: 'Triangle', icon: '🔺' },
+                    { id: 'VCP Compression', label: 'VCP Coil', icon: '⚡' },
+                    { id: 'Harmonic Pattern (C-to-D)', label: 'Harmonic C-to-D', icon: '💎' },
+                    { id: 'Volume Surge', label: 'Vol Surge', icon: '⚡' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPatternFilter(p.id)}
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition-all flex items-center gap-1 ${
+                        selectedPatternFilter === p.id
+                          ? 'bg-indigo-600 text-white shadow border border-indigo-400'
+                          : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                      }`}
+                    >
+                      <span>{p.icon}</span>
+                      <span>{p.label}</span>
+                    </button>
+                  ))}
                 </div>
 
                 {/* Scope Switcher: Recent 7 Days vs Full Timeframe */}
@@ -847,7 +1117,7 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
                   onClick={() => setShowAllWindowMarkers(!showAllWindowMarkers)}
                   className={`px-2.5 py-1 rounded-lg border transition-colors ${
                     showAllWindowMarkers
-                      ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40'
+                      ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40 font-bold'
                       : 'bg-slate-900 text-slate-400 border-slate-800'
                   }`}
                   title="Toggle between showing markers for recent 7 days only vs entire selected timeframe window"
