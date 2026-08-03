@@ -6,7 +6,8 @@ import {
   BreakoutSignal,
   ScreenerStockCandidate,
   TechnicalPatternType,
-  ExtractedFile
+  ExtractedFile,
+  EarlyTrendAnalysis
 } from '../types';
 
 // Realistic Sample Datasets for Dhaka Stock Exchange (DSE) Companies
@@ -571,6 +572,298 @@ export function normalizeDateString(rawDate: string): string {
   return str;
 }
 
+// Comprehensive DSE Sector Dictionary
+export const DSE_SECTOR_MAP: Record<string, string> = {
+  // Pharmaceuticals & Chemicals
+  SQURPHARMA: 'Pharmaceuticals & Chemicals',
+  RENATA: 'Pharmaceuticals & Chemicals',
+  BXPHARMA: 'Pharmaceuticals & Chemicals',
+  ACI: 'Pharmaceuticals & Chemicals',
+  MARICO: 'Pharmaceuticals & Chemicals',
+  UNILEVERCL: 'Pharmaceuticals & Chemicals',
+  BEACONPHAR: 'Pharmaceuticals & Chemicals',
+  IBNSINA: 'Pharmaceuticals & Chemicals',
+  ORIONPHARM: 'Pharmaceuticals & Chemicals',
+  ACMELAB: 'Pharmaceuticals & Chemicals',
+  SILCOPHARM: 'Pharmaceuticals & Chemicals',
+  ADVENT: 'Pharmaceuticals & Chemicals',
+  CENTRALPH: 'Pharmaceuticals & Chemicals',
+  SILVAPHAR: 'Pharmaceuticals & Chemicals',
+  PHARMAAID: 'Pharmaceuticals & Chemicals',
+  NAVANAPHAR: 'Pharmaceuticals & Chemicals',
+  TECHNODRUG: 'Pharmaceuticals & Chemicals',
+  JMISMG: 'Pharmaceuticals & Chemicals',
+  KEYACOSMET: 'Pharmaceuticals & Chemicals',
+  SALVOCHEM: 'Pharmaceuticals & Chemicals',
+  KOHINOOR: 'Pharmaceuticals & Chemicals',
+  ACTIVEFINE: 'Pharmaceuticals & Chemicals',
+  AFCAGRO: 'Pharmaceuticals & Chemicals',
+  AMBEEPHA: 'Pharmaceuticals & Chemicals',
+
+  // Banks
+  BRACBANK: 'Bank',
+  CITYBANK: 'Bank',
+  EBL: 'Bank',
+  EBLNRB: 'Bank',
+  ISLAMIBANK: 'Bank',
+  PUBALIBANK: 'Bank',
+  DUTCHBANGL: 'Bank',
+  NBL: 'Bank',
+  ONEBANK: 'Bank',
+  EXIMBANK: 'Bank',
+  ALARABANK: 'Bank',
+  PRIMEBANK: 'Bank',
+  UCB: 'Bank',
+  IFIC: 'Bank',
+  JAMUNABANK: 'Bank',
+  MUTUALBANK: 'Bank',
+  NCCBANK: 'Bank',
+  SHAHJABANK: 'Bank',
+  SOUTHWEST: 'Bank',
+  STANDARD: 'Bank',
+  TRUSTBANK: 'Bank',
+  PREMIERBAN: 'Bank',
+  FIRSTSBANK: 'Bank',
+  ICBIBANK: 'Bank',
+  ABBANK: 'Bank',
+  GLOBALBANK: 'Bank',
+  MIDLANDBNK: 'Bank',
+  NRBBANK: 'Bank',
+  SIBL: 'Bank',
+  UNIONBANK: 'Bank',
+  SBACBANK: 'Bank',
+
+  // Financial Institutions
+  IDLC: 'Financial Institutions',
+  LANKABAFIN: 'Financial Institutions',
+  IPDC: 'Financial Institutions',
+  BAYLEASING: 'Financial Institutions',
+  GSPFINANCE: 'Financial Institutions',
+  PHOENIXFIN: 'Financial Institutions',
+  ISLAMICFIN: 'Financial Institutions',
+  MIDASFIN: 'Financial Institutions',
+  DBH: 'Financial Institutions',
+  ULC: 'Financial Institutions',
+  BFINANCE: 'Financial Institutions',
+  PREMIERLEA: 'Financial Institutions',
+  FAREASTFIN: 'Financial Institutions',
+  FASFIN: 'Financial Institutions',
+  FIRSTFIN: 'Financial Institutions',
+  INDUSTRIAL: 'Financial Institutions',
+  UNIONCAP: 'Financial Institutions',
+  BIFC: 'Financial Institutions',
+
+  // Engineering
+  BSRMSTEEL: 'Engineering',
+  GPHISPAT: 'Engineering',
+  WALTONHIL: 'Engineering',
+  SINGERBD: 'Engineering',
+  NAHEEACP: 'Engineering',
+  KDSALTD: 'Engineering',
+  BSRMLTD: 'Engineering',
+  SSSTEEL: 'Engineering',
+  AFTABAUTO: 'Engineering',
+  RUNNERAUTO: 'Engineering',
+  BDLAMPS: 'Engineering',
+  OLYMPICEX: 'Engineering',
+  APEXADELFT: 'Engineering',
+  COPPERTECH: 'Engineering',
+  DOMINAGE: 'Engineering',
+  GOLDENSON: 'Engineering',
+  IFADAUTOS: 'Engineering',
+  MALEKSPIN: 'Engineering',
+  BDAUTOS: 'Engineering',
+  OIMEX: 'Engineering',
+  SAIFPOWER: 'Engineering',
+  RSRMSTEEL: 'Engineering',
+  BBS: 'Engineering',
+  BBSCABLES: 'Engineering',
+
+  // Food & Allied
+  BATBC: 'Food & Allied',
+  OLYMPIC: 'Food & Allied',
+  APEXFOODS: 'Food & Allied',
+  BANGAS: 'Food & Allied',
+  GEMINISEA: 'Food & Allied',
+  LOVELLO: 'Food & Allied',
+  EMERALDOIL: 'Food & Allied',
+  FINEFOODS: 'Food & Allied',
+  MEGHNABAN: 'Food & Allied',
+  AMCL: 'Food & Allied',
+  FUWANGAO: 'Food & Allied',
+
+  // IT Sector
+  ADNTEL: 'IT Sector',
+  GENEXIL: 'IT Sector',
+  AAMRAFIN: 'IT Sector',
+  AAMRATECH: 'IT Sector',
+  BDCOM: 'IT Sector',
+  ITTEFAQ: 'IT Sector',
+  INTECH: 'IT Sector',
+  AGNISYSTEM: 'IT Sector',
+  INFOSYS: 'IT Sector',
+
+  // Telecommunication
+  GP: 'Telecommunication',
+  ROBI: 'Telecommunication',
+  BSCCL: 'Telecommunication',
+
+  // Textile
+  ALLTEX: 'Textile',
+  ENVOYTEX: 'Textile',
+  SQUARETEXT: 'Textile',
+  TOSRIFA: 'Textile',
+  ARGONDENIM: 'Textile',
+  SHASHDENIM: 'Textile',
+  SIMTEX: 'Textile',
+  MATINSPINN: 'Textile',
+  ZAHEENSPN: 'Textile',
+  GENERATION: 'Textile',
+  METROSPIN: 'Textile',
+  PACIFICDEN: 'Textile',
+
+  // Fuel & Power
+  MPETROLEUM: 'Fuel & Power',
+  POWERGRID: 'Fuel & Power',
+  DESCO: 'Fuel & Power',
+  UPGDCL: 'Fuel & Power',
+  SUMITPOWER: 'Fuel & Power',
+  TITASGAS: 'Fuel & Power',
+  JAMUNAOIL: 'Fuel & Power',
+  PADMAOIL: 'Fuel & Power',
+  DORINPWR: 'Fuel & Power',
+  BARAKA: 'Fuel & Power',
+  SHAHJIBAZA: 'Fuel & Power',
+  MJLBD: 'Fuel & Power',
+  KPCL: 'Fuel & Power',
+
+  // Insurance
+  GREENDELT: 'Insurance',
+  PHOENIXINS: 'Insurance',
+  EASTLAND: 'Insurance',
+  DELTALIFE: 'Insurance',
+  MEGHNALIFE: 'Insurance',
+  CENTRALINS: 'Insurance',
+  CONTININS: 'Insurance',
+  PARAMOUT: 'Insurance',
+  RELIANCINS: 'Insurance',
+  ASIAINS: 'Insurance',
+  BGIC: 'Insurance',
+  CITYINS: 'Insurance',
+  PRAGATIINS: 'Insurance',
+  PRIMEINS: 'Insurance',
+  PROVATIINS: 'Insurance',
+  REPUBLICA: 'Insurance',
+  NITOLINS: 'Insurance',
+  SONARBAINS: 'Insurance',
+  STANDARDIN: 'Insurance',
+  SUNLIFEINS: 'Insurance',
+  UNIQUEHRL: 'Insurance',
+
+  // Cement
+  LHBL: 'Cement',
+  HEIDELBCEM: 'Cement',
+  CROWNSEMT: 'Cement',
+  MISEMENT: 'Cement',
+  CONFIDCEM: 'Cement',
+  ARAMITCEM: 'Cement',
+  MEGHNACEM: 'Cement',
+
+  // Ceramics
+  FUWANGCER: 'Ceramics',
+  RAKCERAMIC: 'Ceramics',
+  SHINPATO: 'Ceramics',
+  MONNOCERA: 'Ceramics',
+
+  // Tannery Industries
+  APEXTANRY: 'Tannery Industries',
+  BATASHOE: 'Tannery Industries',
+  FORTUNE: 'Tannery Industries',
+  SAMATA: 'Tannery Industries',
+
+  // Paper & Printing
+  HAKKANIPUL: 'Paper & Printing',
+  BPPAPER: 'Paper & Printing',
+  SONALIPAPR: 'Paper & Printing',
+
+  // Travel & Leisure
+  PENINSULA: 'Travel & Leisure',
+  SEAPEARL: 'Travel & Leisure',
+
+  // Services & Real Estate
+  EHL: 'Services & Real Estate',
+  SAMORITA: 'Services & Real Estate',
+};
+
+export function inferDseSector(symbol: string, rawSector?: string, rawName?: string): string {
+  if (rawSector && rawSector.trim().length > 2 && !rawSector.toLowerCase().includes('uploaded')) {
+    const clean = rawSector.trim();
+    if (clean.length > 0) return clean;
+  }
+
+  const sym = symbol.toUpperCase().replace(/[^A-Z0-9_]/g, '');
+
+  // Direct check for numbered sector formats (e.g. 11_IT_Sector, 01_Bank, 20_Textile)
+  if (/^\d{2}_/.test(sym)) {
+    const stripped = sym.replace(/^\d{2}_/, '').replace(/_/g, ' ');
+    if (/BANK/i.test(stripped)) return 'Bank';
+    if (/FINAN/i.test(stripped)) return 'Financial Institutions';
+    if (/PHARMA/i.test(stripped)) return 'Pharmaceuticals & Chemicals';
+    if (/TEXT/i.test(stripped)) return 'Textile';
+    if (/INSUR/i.test(stripped)) return 'Insurance';
+    if (/CEM/i.test(stripped)) return 'Cement';
+    if (/CERAM/i.test(stripped)) return 'Ceramics';
+    if (/FUEL|POWER/i.test(stripped)) return 'Fuel & Power';
+    if (/ENGIN/i.test(stripped)) return 'Engineering';
+    if (/FOOD/i.test(stripped)) return 'Food & Allied';
+    if (/IT/i.test(stripped)) return 'IT Sector';
+    if (/PAPER/i.test(stripped)) return 'Paper & Printing';
+    if (/TANNERY|LEATH/i.test(stripped)) return 'Tannery Industries';
+    if (/TRAVEL|LEISU/i.test(stripped)) return 'Travel & Leisure';
+    if (/SERVI|REAL/i.test(stripped)) return 'Services & Real Estate';
+    if (/TELE/i.test(stripped)) return 'Telecommunication';
+    if (/MUTUAL|FUND/i.test(stripped)) return 'Mutual Funds';
+    if (/JUTE/i.test(stripped)) return 'Jute';
+    return stripped;
+  }
+
+  const cleanSym = sym.replace(/_/g, '');
+
+  // 1. Direct DSE Lookup
+  if (DSE_SECTOR_MAP[cleanSym]) {
+    return DSE_SECTOR_MAP[cleanSym];
+  }
+
+  // 2. Pattern & Name Heuristics
+  const target = `${cleanSym} ${(rawName || '').toUpperCase()}`;
+
+  if (/BANK/i.test(target)) return 'Bank';
+  if (/FIN|LEASE|CAPITAL|HOLDING|FINANCE/i.test(target)) return 'Financial Institutions';
+  if (/PHARM|CHEM|LAB|DRUG|BIO|MED/i.test(target)) return 'Pharmaceuticals & Chemicals';
+  if (/TEX|SPIN|DENIM|FABRIC|GARMENT|WOVEN|KNIT/i.test(target)) return 'Textile';
+  if (/INS|INSURANCE|LIFE/i.test(target)) return 'Insurance';
+  if (/CEM|CEMENT/i.test(target)) return 'Cement';
+  if (/CER|CERAMIC/i.test(target)) return 'Ceramics';
+  if (/POWER|GAS|OIL|PETRO|ENERGY|GRID|ELECTRIC/i.test(target)) return 'Fuel & Power';
+  if (/STEEL|ISPAT|AUTO|CABLE|ENGINEER|METAL|PIPE|ALLOY/i.test(target)) return 'Engineering';
+  if (/FOOD|FEED|AGRO|BEV|ALLIED|SUGAR|SEA|POULTRY|GRAIN/i.test(target)) return 'Food & Allied';
+  if (/IT|TEL|NET|TECH|SYS|INFO|CYBER|SOFTWARE|COMM/i.test(target)) return 'IT Sector';
+  if (/PAPER|PULP|PRINT|BOARD/i.test(target)) return 'Paper & Printing';
+  if (/LEATHER|TANRY|SHOE|FOOT/i.test(target)) return 'Tannery Industries';
+  if (/HOTEL|RESORT|TRAVEL|LEISURE|PEARL/i.test(target)) return 'Travel & Leisure';
+
+  return 'Diversified / General Industry';
+}
+
+export function isSectorOrMarketIndex(symbol: string): boolean {
+  const sym = symbol.trim().toUpperCase();
+  if (!sym) return false;
+  if (/^(DSEX|DSES|DS30|CSE|CASPI|CSX)$/i.test(sym)) return true;
+  if (/^\d{2}_/.test(sym)) return true;
+  if (/_Sector$/i.test(sym) || /_Funds$/i.test(sym) || /_Bond$/i.test(sym) || /_Index$/i.test(sym)) return true;
+  return false;
+}
+
 // CSV / JSON Custom DSE Stock Dataset Parser (Single or Multi-stock)
 export function parseCustomDseStockFile(fileContent: string, fileName: string): DseStockData | null {
   const parsed = parseCustomDseStockFiles(fileContent, fileName);
@@ -584,7 +877,7 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
       const parsed = JSON.parse(fileContent);
       const items = Array.isArray(parsed) ? parsed : [parsed];
       items.forEach((item) => {
-        if (item.symbol && Array.isArray(item.candles)) {
+        if (item.symbol && Array.isArray(item.candles) && !isSectorOrMarketIndex(item.symbol)) {
           const candleMap = new Map<string, DseStockCandle>();
           item.candles.forEach((c: DseStockCandle) => {
             const normDate = normalizeDateString(c.date);
@@ -595,6 +888,7 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
           );
           results.push({
             ...item,
+            sector: inferDseSector(item.symbol, item.sector, item.name),
             candles: sorted,
           });
         }
@@ -604,7 +898,7 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
 
     // CSV Parsing (Supports multi-stock CSV or single stock CSV)
     const lines = fileContent.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-    if (lines.length < 2) return [];
+    if (lines.length < 1) return [];
 
     const headerParts = lines[0].toLowerCase().split(',').map((h) => h.trim());
     const hasHeader = headerParts.some((h) => h.includes('date') || h.includes('close') || h.includes('symbol') || h.includes('ticker'));
@@ -612,6 +906,8 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
 
     // Detect column indexes if header exists
     let symbolCol = -1;
+    let sectorCol = -1;
+    let nameCol = -1;
     let dateCol = 0;
     let openCol = 1;
     let highCol = 2;
@@ -621,25 +917,56 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
 
     if (hasHeader) {
       headerParts.forEach((col, idx) => {
-        if (col.includes('symbol') || col.includes('ticker') || col.includes('code') || col.includes('stock')) symbolCol = idx;
+        if (col.includes('symbol') || col.includes('ticker') || col.includes('code') || col.includes('stock') || col.includes('scrip')) symbolCol = idx;
+        else if (col.includes('sector') || col.includes('industry') || col.includes('category') || col.includes('group')) sectorCol = idx;
+        else if (col.includes('company') || col.includes('name') || col.includes('title')) nameCol = idx;
         else if (col.includes('date') || col.includes('time')) dateCol = idx;
         else if (col.includes('open')) openCol = idx;
         else if (col.includes('high')) highCol = idx;
         else if (col.includes('low')) lowCol = idx;
         else if (col.includes('close') || col.includes('ltp') || col.includes('price')) closeCol = idx;
-        else if (col.includes('vol') || col.includes('trade')) volCol = idx;
+        else if (col.includes('vol') || col.includes('trade') || col.includes('value') || col.includes('turnover')) volCol = idx;
       });
+    } else {
+      // Headerless CSV detection
+      // Check first data line format: e.g. "1JANATAMF,20260803,4.2,4.3,4.1,4.2,4856046,630,20.15,150143"
+      const sampleParts = lines[0].split(',').map((p) => p.trim());
+      if (sampleParts.length >= 6) {
+        const isPart0Ticker = /^[A-Za-z0-9_\-\.\&]+$/.test(sampleParts[0]) && isNaN(Number(sampleParts[0]));
+        const isPart1Date = /^\d{8}$/.test(sampleParts[1]) || /^\d{4}[-/.]\d{2}[-/.]\d{2}$/.test(sampleParts[1]) || /^\d{2}[-/.]\d{2}[-/.]\d{4}$/.test(sampleParts[1]);
+
+        if (isPart0Ticker && isPart1Date) {
+          symbolCol = 0;
+          dateCol = 1;
+          openCol = 2;
+          highCol = 3;
+          lowCol = 4;
+          closeCol = 5;
+          volCol = 6;
+        }
+      }
     }
 
-    // Group by Symbol if symbol column exists
+    // Group by Symbol
     const stockMap = new Map<string, DseStockCandle[]>();
+    const symbolMetaMap = new Map<string, { sector?: string; name?: string }>();
 
     for (let i = startIdx; i < lines.length; i++) {
       const parts = lines[i].split(',').map((p) => p.trim());
       if (parts.length < 4) continue;
 
-      const sym = symbolCol >= 0 && parts[symbolCol] ? parts[symbolCol].toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
-      const rawDate = parts[dateCol] || `2025-01-${String(i).padStart(2, '0')}`;
+      const rawSym = symbolCol >= 0 && parts[symbolCol] ? parts[symbolCol].trim() : '';
+      const sym = rawSym.toUpperCase().replace(/[^A-Z0-9_\-]/g, '');
+
+      // Skip market/sector index summary lines from tradeable individual stock lists
+      if (isSectorOrMarketIndex(rawSym)) {
+        continue;
+      }
+
+      const rawSector = sectorCol >= 0 && parts[sectorCol] ? parts[sectorCol] : undefined;
+      const rawName = nameCol >= 0 && parts[nameCol] ? parts[nameCol] : undefined;
+
+      const rawDate = parts[dateCol] || `2026-08-03`;
       const date = normalizeDateString(rawDate);
 
       const open = parseFloat(parts[openCol]) || 0;
@@ -654,6 +981,14 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
           stockMap.set(targetSym, []);
         }
         stockMap.get(targetSym)!.push({ date, open, high, low, close, volume });
+
+        if (!symbolMetaMap.has(targetSym)) {
+          symbolMetaMap.set(targetSym, { sector: rawSector, name: rawName });
+        } else {
+          const currentMeta = symbolMetaMap.get(targetSym)!;
+          if (!currentMeta.sector && rawSector) currentMeta.sector = rawSector;
+          if (!currentMeta.name && rawName) currentMeta.name = rawName;
+        }
       }
     }
 
@@ -667,10 +1002,14 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
           (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
         );
 
+        const meta = symbolMetaMap.get(sym) || {};
+        const assignedSector = inferDseSector(sym, meta.sector, meta.name);
+        const assignedName = meta.name || `${sym} PLC`;
+
         results.push({
           symbol: sym,
-          name: `${sym} (Uploaded Data)`,
-          sector: 'Uploaded Sector',
+          name: assignedName,
+          sector: assignedSector,
           yoyGrowthPct: 8.0,
           peRatio: 12.5,
           avgTurnoverBdtMillion: 60.0,
@@ -796,8 +1135,14 @@ export function extractStockDataFromExtractedFiles(files: ExtractedFile[]): DseS
             (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
           );
 
+          const bestSector =
+            stock.sector && !stock.sector.includes('Diversified / General Industry')
+              ? stock.sector
+              : existing.sector;
+
           stockMap.set(stock.symbol, {
             ...stock,
+            sector: bestSector,
             candles: mergedCandles,
           });
         }
@@ -806,6 +1151,99 @@ export function extractStockDataFromExtractedFiles(files: ExtractedFile[]): DseS
   }
 
   return filterActiveStocks(Array.from(stockMap.values()).filter((s) => s.candles.length >= 2));
+}
+
+// Early Trend Ignition Detector (Stage 1 Coil & Stage 2 Ignition)
+export function detectEarlyTrendIgnition(candles: DseStockCandle[]): EarlyTrendAnalysis {
+  if (!candles || candles.length < 15) {
+    return {
+      stage: 'BASE_ACCUMULATION',
+      stageLabel: 'Base Accumulation',
+      isEarlyTrend: false,
+      score: 30,
+      signals: ['Base structure forming'],
+    };
+  }
+
+  const n = candles.length;
+  const latest = candles[n - 1];
+  const last5 = candles.slice(n - 5);
+  const last20 = candles.slice(n - 20);
+
+  // 5-day Moving Average vs 20-day Moving Average
+  const ma5 = last5.reduce((s, c) => s + c.close, 0) / 5;
+  const ma20 = last20.reduce((s, c) => s + c.close, 0) / 20;
+  const is5Above20 = ma5 >= ma20;
+
+  // OBV Accumulation Slope check over last 5 trading days
+  let obvSlope = 0;
+  for (let i = Math.max(1, n - 6); i < n; i++) {
+    const diff = candles[i].close - candles[i - 1].close;
+    if (diff > 0) obvSlope += candles[i].volume;
+    else if (diff < 0) obvSlope -= candles[i].volume;
+  }
+  const isObvRising = obvSlope > 0;
+
+  // 5-day Volatility Compression Range (tight coil)
+  const maxH5 = Math.max(...last5.map((c) => c.high));
+  const minL5 = Math.min(...last5.map((c) => c.low));
+  const range5Pct = minL5 > 0 ? ((maxH5 - minL5) / minL5) * 100 : 10;
+  const isTightCoil = range5Pct <= 4.2;
+
+  // Relative Volume (20-day ADV)
+  const prev19Vol = last20.slice(0, 19).reduce((s, c) => s + c.volume, 0) / 19;
+  const rvol = prev19Vol > 0 ? latest.volume / prev19Vol : 1.0;
+  const isPocketPivot = rvol >= 1.25 && rvol <= 2.2 && latest.close > latest.open;
+  const isFullBreakout = rvol > 2.2 && latest.close > latest.open;
+
+  const signalsList: string[] = [];
+  let score = 20;
+
+  if (is5Above20) {
+    score += 25;
+    signalsList.push('5d MA Golden Crossover above 20d MA');
+  }
+  if (isObvRising) {
+    score += 20;
+    signalsList.push('OBV slope positive (institutional accumulation)');
+  }
+  if (isTightCoil) {
+    score += 25;
+    signalsList.push(`Tight pre-breakout coil (${range5Pct.toFixed(1)}% 5d range)`);
+  }
+  if (isPocketPivot) {
+    score += 20;
+    signalsList.push(`Pocket Pivot early volume expansion (${rvol.toFixed(1)}x ADV)`);
+  } else if (isFullBreakout) {
+    score += 15;
+    signalsList.push(`Full volume surge breakout (${rvol.toFixed(1)}x ADV)`);
+  }
+
+  let stage: EarlyTrendAnalysis['stage'] = 'BASE_ACCUMULATION';
+  let stageLabel = 'Base Accumulation';
+  let isEarlyTrend = false;
+
+  if (isFullBreakout && is5Above20) {
+    stage = 'STAGE_3_FULL_BREAKOUT';
+    stageLabel = 'Stage 3: Full Breakout';
+    isEarlyTrend = false;
+  } else if (score >= 65 || (is5Above20 && isObvRising && isPocketPivot)) {
+    stage = 'STAGE_2_IGNITION';
+    stageLabel = 'Stage 2: Early Trend Ignition';
+    isEarlyTrend = true;
+  } else if (isTightCoil || (is5Above20 && isObvRising)) {
+    stage = 'STAGE_1_EARLY_COIL';
+    stageLabel = 'Stage 1: Pre-Breakout Coil';
+    isEarlyTrend = true;
+  }
+
+  return {
+    stage,
+    stageLabel,
+    isEarlyTrend,
+    score: Math.min(100, score),
+    signals: signalsList,
+  };
 }
 
 // High-Profit Decision-Making DSE Stock Screener Engine
@@ -840,6 +1278,9 @@ export function runDseStockScreener(
     const isPriceGreen = latest.close > latest.open;
     const isVolumeSurge = rvol20 >= config.volumeSurgeMultiplier && isPriceGreen;
 
+    // Early Trend Ignition Analysis
+    const earlyTrend = detectEarlyTrendIgnition(candles);
+
     // Check last 5 days volatility range (VCP / Narrow Range)
     const last5 = candles.slice(-5);
     const maxHigh5 = Math.max(...last5.map((c) => c.high));
@@ -859,7 +1300,8 @@ export function runDseStockScreener(
 
     // 1. Volume Surge & Price Action (35 pts max)
     if (isVolumeSurge) score += 35;
-    else if (rvol20 >= 1.5 && isPriceGreen) score += 22;
+    else if (rvol20 >= 1.5 && isPriceGreen) score += 25;
+    else if (earlyTrend.isEarlyTrend) score += 28; // Early trend ignition bonus
     else if (isVolumeDryUp && isTightConsolidation) score += 28; // Pre-breakout coil
     else if (latest.close > ma20Price) score += 15;
 
@@ -889,6 +1331,8 @@ export function runDseStockScreener(
 
     if (profitPotentialScore >= 70 && (isVolumeSurge || (rvol20 >= 2.0 && isPriceGreen)) && passesYoy && passesTurnover) {
       decisionStatus = 'STRONG_BUY';
+    } else if (earlyTrend.stage === 'STAGE_2_IGNITION' && passesYoy) {
+      decisionStatus = 'EARLY_TREND_IGNITION';
     } else if (profitPotentialScore >= 55 || (isVolumeDryUp && isTightConsolidation && passesYoy)) {
       decisionStatus = 'WATCHLIST_BREAKOUT';
     } else if (profitPotentialScore >= 40 || latest.close > ma20Price) {
@@ -906,6 +1350,7 @@ export function runDseStockScreener(
 
     // Catalysts list
     const catalysts: string[] = [];
+    if (earlyTrend.isEarlyTrend) catalysts.push(`🌱 ${earlyTrend.stageLabel}`);
     if (isVolumeSurge) catalysts.push(`🔥 Massive ${rvol20}x ADV Volume Surge`);
     if (isTightConsolidation) catalysts.push(`⚡ Tight Volatility Contraction (${range5Pct.toFixed(1)}% Range)`);
     if (isVolumeDryUp) catalysts.push(`💧 Institutional Supply Dry-up (0.${Math.round(rvol20 * 10)}x Vol)`);
@@ -915,7 +1360,8 @@ export function runDseStockScreener(
 
     // Pattern description
     let pattern = 'Consolidation Base';
-    if (isTightConsolidation && isVolumeSurge) pattern = 'VCP Breakout (Vol Contraction Pattern)';
+    if (earlyTrend.stage === 'STAGE_2_IGNITION') pattern = 'Early Trend Ignition (MA Cross + OBV Accumulation)';
+    else if (isTightConsolidation && isVolumeSurge) pattern = 'VCP Breakout (Vol Contraction Pattern)';
     else if (isTightConsolidation) pattern = 'Narrow Range Coiling (NR7 / Compression)';
     else if (isVolumeSurge) pattern = 'Volume Surge Momentum';
     else if (latest.close > ma20Price) pattern = '20d Moving Average Uptrend Support';
@@ -924,6 +1370,8 @@ export function runDseStockScreener(
     let reasoning = 'Stock is maintaining healthy price structure above 20d MA with stable turnover.';
     if (decisionStatus === 'STRONG_BUY') {
       reasoning = `High-probability entry setup! Stock exploded with ${rvol20}x 20d ADV volume surge, breaking out from tight consolidation. Planned R:R is ${riskRewardRatio}:1 with +${targetProfitPct}% profit potential.`;
+    } else if (decisionStatus === 'EARLY_TREND_IGNITION') {
+      reasoning = `Early Trend Ignition detected! 5d MA crossed above 20d MA with rising OBV accumulation prior to major volume breakout. Ideal early-stage entry before broad market awareness.`;
     } else if (decisionStatus === 'WATCHLIST_BREAKOUT') {
       reasoning = `Volume dry-up with tight volatility coiling. Institutional accumulation in progress — set alert for volume expansion above ${Math.round(avgVol20 * config.volumeSurgeMultiplier).toLocaleString()} shares.`;
     } else if (decisionStatus === 'CONSOLIDATING_ACCUMULATION') {
@@ -933,6 +1381,7 @@ export function runDseStockScreener(
     // Recommended capital allocation percentage based on conviction
     let recommendedPositionSizePct = 10;
     if (decisionStatus === 'STRONG_BUY') recommendedPositionSizePct = 15;
+    if (decisionStatus === 'EARLY_TREND_IGNITION') recommendedPositionSizePct = 14;
     if (decisionStatus === 'WATCHLIST_BREAKOUT') recommendedPositionSizePct = 12;
 
     const techPattern = detectTechnicalPattern(candles, candles.length - 1);
@@ -967,6 +1416,8 @@ export function runDseStockScreener(
       peRatio: stock.peRatio,
       yoyGrowthPct: stock.yoyGrowthPct,
       avgTurnoverBdtMillion: stock.avgTurnoverBdtMillion,
+      earlyTrendStage: earlyTrend.stage,
+      earlyTrendSignals: earlyTrend.signals,
     });
   }
 

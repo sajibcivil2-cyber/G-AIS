@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { DseStockData, DseStockCandle, BacktestConfig, BreakoutSignal, ScreenerStockCandidate } from '../types';
 import { evaluateStockForScreener } from '../utils/dseBacktestEngine';
+import { StockDetailModal } from './StockDetailModal';
 
 interface DseStockComparerProps {
   stocks: DseStockData[];
@@ -56,6 +57,8 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
   // Active Stock Data objects
   const stockA = useMemo(() => stocks.find((s) => s.symbol === symbolA) || stocks[0], [stocks, symbolA]);
   const stockB = useMemo(() => stocks.find((s) => s.symbol === symbolB) || stocks[1] || stocks[0], [stocks, symbolB]);
+
+  const [modalCandidate, setModalCandidate] = useState<ScreenerStockCandidate | null>(null);
 
   // Active Candidate Evaluations
   const candA = useMemo(() => screenerMap.get(symbolA) || null, [screenerMap, symbolA]);
@@ -482,14 +485,24 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
               </p>
             </div>
 
-            {onSelectStockForChart && (
-              <button
-                onClick={() => onSelectStockForChart(stockA.symbol)}
-                className="px-2.5 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 font-bold font-mono text-[11px] border border-cyan-500/40 flex items-center gap-1 transition-colors"
-              >
-                <Eye className="w-3.5 h-3.5" /> Full D3 Chart
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {candA && (
+                <button
+                  onClick={() => setModalCandidate(candA)}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 font-bold font-mono text-[11px] border border-indigo-500/40 flex items-center gap-1 transition-colors"
+                >
+                  <BarChart2 className="w-3.5 h-3.5" /> 3M Details
+                </button>
+              )}
+              {onSelectStockForChart && (
+                <button
+                  onClick={() => onSelectStockForChart(stockA.symbol)}
+                  className="px-2.5 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 font-bold font-mono text-[11px] border border-cyan-500/40 flex items-center gap-1 transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" /> Full D3 Chart
+                </button>
+              )}
+            </div>
           </div>
 
           {/* SVG Mini Chart */}
@@ -534,14 +547,24 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
               </p>
             </div>
 
-            {onSelectStockForChart && (
-              <button
-                onClick={() => onSelectStockForChart(stockB.symbol)}
-                className="px-2.5 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 font-bold font-mono text-[11px] border border-purple-500/40 flex items-center gap-1 transition-colors"
-              >
-                <Eye className="w-3.5 h-3.5" /> Full D3 Chart
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {candB && (
+                <button
+                  onClick={() => setModalCandidate(candB)}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 font-bold font-mono text-[11px] border border-indigo-500/40 flex items-center gap-1 transition-colors"
+                >
+                  <BarChart2 className="w-3.5 h-3.5" /> 3M Details
+                </button>
+              )}
+              {onSelectStockForChart && (
+                <button
+                  onClick={() => onSelectStockForChart(stockB.symbol)}
+                  className="px-2.5 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 font-bold font-mono text-[11px] border border-purple-500/40 flex items-center gap-1 transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" /> Full D3 Chart
+                </button>
+              )}
+            </div>
           </div>
 
           {/* SVG Mini Chart */}
@@ -730,6 +753,16 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Stock Deep Analysis Modal */}
+      {modalCandidate && (
+        <StockDetailModal
+          candidate={modalCandidate}
+          config={config}
+          onClose={() => setModalCandidate(null)}
+          onOpenChart={onSelectStockForChart}
+        />
+      )}
     </div>
   );
 };

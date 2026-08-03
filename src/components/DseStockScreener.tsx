@@ -24,10 +24,12 @@ import {
 import { DseStockData, BacktestConfig, ScreenerStockCandidate, ScreenerDecisionStatus } from '../types';
 import { runDseStockScreener, parseCustomDseStockFiles, extractStockDataFromExtractedFiles } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
+import { StockDetailModal } from './StockDetailModal';
 
 interface DseStockScreenerProps {
   stocks: DseStockData[];
   config: BacktestConfig;
+  selectedPatternFilter?: string;
   onUpdateConfig: (newConfig: BacktestConfig) => void;
   onSelectStockForChart: (symbol: string) => void;
   onCustomStockUploaded: (newStocks: DseStockData[]) => void;
@@ -36,6 +38,7 @@ interface DseStockScreenerProps {
 export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   stocks,
   config,
+  selectedPatternFilter,
   onUpdateConfig,
   onSelectStockForChart,
   onCustomStockUploaded,
@@ -61,8 +64,15 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   const filteredCandidates = useMemo(() => {
     return candidates
       .filter((c) => {
-        if (selectedStatus !== 'ALL' && c.decisionStatus !== selectedStatus) return false;
+        if (selectedStatus !== 'ALL') {
+          if (selectedStatus === 'EARLY_TREND_IGNITION') {
+            if (c.decisionStatus !== 'EARLY_TREND_IGNITION' && c.earlyTrendStage !== 'STAGE_2_IGNITION' && c.earlyTrendStage !== 'STAGE_1_EARLY_COIL') return false;
+          } else if (c.decisionStatus !== selectedStatus) {
+            return false;
+          }
+        }
         if (selectedSector !== 'ALL' && c.sector !== selectedSector) return false;
+        if (selectedPatternFilter && selectedPatternFilter !== 'ALL' && c.detectedPattern !== selectedPatternFilter) return false;
         return true;
       })
       .sort((a, b) => {
@@ -73,11 +83,12 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
         if (sortBy === 'pe') return a.peRatio - b.peRatio;
         return 0;
       });
-  }, [candidates, selectedStatus, selectedSector, sortBy]);
+  }, [candidates, selectedStatus, selectedSector, sortBy, selectedPatternFilter]);
 
   // Executive Metrics
   const strongBuys = candidates.filter((c) => c.decisionStatus === 'STRONG_BUY');
   const watchlists = candidates.filter((c) => c.decisionStatus === 'WATCHLIST_BREAKOUT');
+  const earlyTrends = candidates.filter((c) => c.decisionStatus === 'EARLY_TREND_IGNITION' || c.earlyTrendStage === 'STAGE_2_IGNITION' || c.earlyTrendStage === 'STAGE_1_EARLY_COIL');
 
   // Top Identified Picks Pool (Top 8 ranked candidates)
   const topPicks = useMemo(() => candidates.slice(0, 8), [candidates]);
@@ -332,6 +343,7 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
             {[
               { id: 'ALL', label: `All Candidates (${candidates.length})` },
               { id: 'STRONG_BUY', label: `🟢 Strong Buy (${strongBuys.length})` },
+              { id: 'EARLY_TREND_IGNITION', label: `🌱 Early Trend Ignition (${earlyTrends.length})` },
               { id: 'WATCHLIST_BREAKOUT', label: `🟡 Breakout Watchlist (${watchlists.length})` },
               { id: 'CONSOLIDATING_ACCUMULATION', label: `🔵 Consolidating` },
             ].map((st) => (
@@ -469,7 +481,8 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
           return (
             <div
               key={candidate.symbol}
-              className={`bg-slate-900 rounded-2xl p-5 border transition-all hover:border-indigo-500/50 shadow-lg space-y-4 flex flex-col justify-between ${
+              onClick={() => setSelectedCandidateModal(candidate)}
+              className={`bg-slate-900 rounded-2xl p-5 border transition-all hover:border-indigo-500/50 hover:shadow-indigo-950/40 shadow-lg space-y-4 flex flex-col justify-between cursor-pointer group ${
                 isStrong
                   ? 'border-emerald-500/50 bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950/20'
                   : isWatch
@@ -582,7 +595,10 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
               {/* Action Buttons */}
               <div className="flex items-center gap-2 pt-1">
                 <button
-                  onClick={() => onSelectStockForChart(candidate.symbol)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectStockForChart(candidate.symbol);
+                  }}
                   className="flex-1 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-200 text-xs font-bold font-mono transition-colors flex items-center justify-center gap-1.5"
                 >
                   <BarChart3 className="w-3.5 h-3.5" /> View D3 Chart
@@ -602,68 +618,12 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
       {/* Candidate Deep Analysis Modal */}
       {selectedCandidateModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl relative">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-lg font-bold text-white font-mono">{selectedCandidateModal.symbol} Deep Trade Analysis</h3>
-                <p className="text-xs text-slate-400">{selectedCandidateModal.stockName} • {selectedCandidateModal.sector} • <span className="text-slate-300 font-mono">Updated: {selectedCandidateModal.latestDate}</span></p>
-              </div>
-              <button
-                onClick={() => setSelectedCandidateModal(null)}
-                className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-sm"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-500">P/E Valuation</span>
-                <div className="font-bold text-amber-300 text-sm">{selectedCandidateModal.peRatio}x</div>
-              </div>
-
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-500">YoY Growth</span>
-                <div className="font-bold text-emerald-400 text-sm">+{selectedCandidateModal.yoyGrowthPct}%</div>
-              </div>
-
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-500">20d ADV Turnover</span>
-                <div className="font-bold text-indigo-300 text-sm">৳{selectedCandidateModal.avgTurnoverBdtMillion}M</div>
-              </div>
-
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-500">Historical Win Rate</span>
-                <div className="font-bold text-white text-sm">{selectedCandidateModal.historicalWinRate}%</div>
-              </div>
-            </div>
-
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
-              <div className="font-bold text-indigo-300">Detailed Strategy Trade Plan</div>
-              <p className="text-slate-300 leading-relaxed">{selectedCandidateModal.tradeSetupReasoning}</p>
-
-              <div className="pt-2 border-t border-slate-800/80 flex flex-wrap justify-between gap-2 text-slate-400">
-                <span>Entry: <strong className="text-white font-mono">৳{selectedCandidateModal.entryPrice}</strong></span>
-                <span>Target: <strong className="text-emerald-400 font-mono">৳{selectedCandidateModal.targetPrice}</strong></span>
-                <span>Stop Loss: <strong className="text-rose-400 font-mono">৳{selectedCandidateModal.stopLossPrice}</strong></span>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => {
-                  const sym = selectedCandidateModal.symbol;
-                  setSelectedCandidateModal(null);
-                  onSelectStockForChart(sym);
-                }}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono text-xs transition-colors"
-              >
-                Open Stock in D3 Chart
-              </button>
-            </div>
-          </div>
-        </div>
+        <StockDetailModal
+          candidate={selectedCandidateModal}
+          config={config}
+          onClose={() => setSelectedCandidateModal(null)}
+          onOpenChart={onSelectStockForChart}
+        />
       )}
     </div>
   );

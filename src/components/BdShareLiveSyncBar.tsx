@@ -22,11 +22,13 @@ import { saveDatabaseToStorage, exportDatabaseToFile, getLastSavedTimestamp, cle
 
 interface BdShareLiveSyncBarProps {
   stocks: DseStockData[];
+  isDatabaseLoaded: boolean;
   onStocksUpdated: (updatedStocks: DseStockData[]) => void;
 }
 
 export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
   stocks,
+  isDatabaseLoaded,
   onStocksUpdated,
 }) => {
   const [freshness, setFreshness] = useState<BdShareSyncStatus>(() => getDatasetFreshness(stocks));
@@ -126,11 +128,11 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
 
   // Auto-sync on mount if enabled and dataset is not up to date
   useEffect(() => {
-    if (!hasAttemptedAutoSync.current && autoSync && !freshness.isUpToDate && stocks.length > 0) {
+    if (isDatabaseLoaded && !hasAttemptedAutoSync.current && autoSync && !freshness.isUpToDate && stocks.length > 0) {
       hasAttemptedAutoSync.current = true;
       handleSyncNow();
     }
-  }, [autoSync, freshness.isUpToDate, stocks]);
+  }, [autoSync, freshness.isUpToDate, stocks, isDatabaseLoaded]);
 
   return (
     <div className="bg-gradient-to-r from-slate-900 via-indigo-950/80 to-slate-900 border border-indigo-500/30 rounded-2xl p-4 shadow-xl space-y-3 relative overflow-hidden">

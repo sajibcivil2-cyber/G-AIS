@@ -137,7 +137,15 @@ export interface BacktestSummary {
   signals: BreakoutSignal[];
 }
 
-export type ScreenerDecisionStatus = 'STRONG_BUY' | 'WATCHLIST_BREAKOUT' | 'CONSOLIDATING_ACCUMULATION' | 'NEUTRAL';
+export type ScreenerDecisionStatus = 'STRONG_BUY' | 'EARLY_TREND_IGNITION' | 'WATCHLIST_BREAKOUT' | 'CONSOLIDATING_ACCUMULATION' | 'NEUTRAL';
+
+export interface EarlyTrendAnalysis {
+  stage: 'STAGE_1_EARLY_COIL' | 'STAGE_2_IGNITION' | 'STAGE_3_FULL_BREAKOUT' | 'BASE_ACCUMULATION';
+  stageLabel: string;
+  isEarlyTrend: boolean;
+  score: number;
+  signals: string[];
+}
 
 export interface ScreenerStockCandidate {
   symbol: string;
@@ -169,5 +177,7 @@ export interface ScreenerStockCandidate {
   peRatio: number;
   yoyGrowthPct: number;
   avgTurnoverBdtMillion: number;
+  earlyTrendStage?: 'STAGE_1_EARLY_COIL' | 'STAGE_2_IGNITION' | 'STAGE_3_FULL_BREAKOUT' | 'BASE_ACCUMULATION';
+  earlyTrendSignals?: string[];
 }
 

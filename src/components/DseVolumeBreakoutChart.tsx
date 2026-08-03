@@ -13,7 +13,8 @@ import {
   Activity,
   Award,
   CheckCircle2,
-  Filter
+  Filter,
+  Clock
 } from 'lucide-react';
 import { DseStockData, DseStockCandle, BacktestConfig, BreakoutSignal } from '../types';
 
@@ -158,6 +159,11 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
   // Timeframe Filter: '1M' | '3M' | '6M' | '1Y' | 'ALL'
   const [timeframe, setTimeframe] = useState<'1M' | '3M' | '6M' | '1Y' | 'ALL'>('3M');
 
+  // Pattern Marker Filter Controls
+  const [showSignals, setShowSignals] = useState<boolean>(true); // Master Toggle for Pattern Markers
+  const [selectedPatternFilter, setSelectedPatternFilter] = useState<string>('ALL'); // 'ALL' | 'Bullish Flag' | 'Double Bottom' | 'Cup & Handle' | 'Ascending Triangle' | 'VCP Compression' | 'Volume Surge'
+  const [showAllWindowMarkers, setShowAllWindowMarkers] = useState<boolean>(false); // false = recent 7 days, true = full range window
+
   // Chart Style: 'candlestick' | 'area'
   const [chartType, setChartType] = useState<'candlestick' | 'area'>('candlestick');
 
@@ -166,7 +172,6 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
   const [showVolume, setShowVolume] = useState<boolean>(true);
   const [showRsi, setShowRsi] = useState<boolean>(true);
   const [showObv, setShowObv] = useState<boolean>(true);
-  const [showSignals, setShowSignals] = useState<boolean>(true); // Default ON for recent 7-day pattern setups
 
   // Hover state
   const [hoveredData, setHoveredData] = useState<ProcessedCandle | null>(null);
@@ -476,15 +481,24 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
       g.append('text').attr('x', chartWidth + 27).attr('y', yLtp + 3).attr('text-anchor', 'middle').attr('fill', '#ffffff').attr('font-size', '9.5px').attr('font-weight', 'bold').attr('font-family', 'monospace').text(`৳${latestCandle.close}`);
     }
 
-    // Last 7 Trading Days Pattern Markers (Clean, non-cluttered badge indicators)
+    // Pattern Markers (Clean, customizable badge indicators)
     if (showSignals && allProcessedCandles.length > 0) {
       const recent7CutoffIndex = Math.max(0, allProcessedCandles.length - 7);
       const recent7Dates = new Set(allProcessedCandles.slice(recent7CutoffIndex).map((c) => c.date));
 
       processedCandles.forEach((d) => {
-        // Only render pattern markers for dates within the LAST 7 TRADING DAYS
-        if (!recent7Dates.has(d.date)) return;
+        // Date scope filter: recent 7 days vs full timeframe window
+        if (!showAllWindowMarkers && !recent7Dates.has(d.date)) return;
         if (!d.isVolumeBreakout && !d.signal) return;
+
+        // Individual Pattern Filter Check
+        if (selectedPatternFilter !== 'ALL') {
+          if (selectedPatternFilter === 'Volume Surge') {
+            if (!d.isVolumeBreakout) return;
+          } else {
+            if (d.signal?.detectedPattern !== selectedPatternFilter) return;
+          }
+        }
 
         const cx = (xScale(d.date) || 0) + bandwidth / 2;
         const yLow = yScalePrice(d.low);
@@ -531,7 +545,13 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
 
         const markerGroup = g.append('g')
           .attr('transform', `translate(${cx - pillWidth / 2}, ${markerY - pillHeight / 2})`)
-          .style('cursor', 'pointer');
+          .style('cursor', 'pointer')
+          .on('click', (event) => {
+            event.stopPropagation();
+            if (d.signal && onSelectSignal) {
+              onSelectSignal(d.signal);
+            }
+          });
 
         markerGroup.append('circle')
           .attr('cx', pillWidth / 2)
@@ -550,6 +570,8 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
           .attr('font-weight', 'bold')
           .attr('font-family', 'monospace')
           .text(pillText);
+
+        markerGroup.append('title').text(`${label} (${d.date}): Entry ৳${d.close}, RVOL ${d.rvol}x`);
       });
     }
 
@@ -633,7 +655,7 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
         focusLineY.style('opacity', 0);
         setHoveredData(null);
       });
-  }, [processedCandles, chartType, showBBands, showVolume, showRsi, showObv, showSignals]);
+  }, [processedCandles, chartType, showBBands, showVolume, showRsi, showObv, showSignals, selectedPatternFilter, showAllWindowMarkers]);
 
   // Handle Window Resize
   useEffect(() => {
@@ -691,85 +713,154 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
         </div>
       </div>
 
-      {/* Chart Control Toolbar: Timeframes & Indicator Toggles */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
-        {/* Timeframe Selection Pills */}
-        <div className="flex items-center gap-1">
-          {(['1M', '3M', '6M', '1Y', 'ALL'] as const).map((tf) => (
+      {/* Chart Control Toolbar: Range Selector & Pattern Marker Filtering */}
+      <div className="flex flex-col gap-3 bg-slate-950/90 p-3 rounded-xl border border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Timeframe Range Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-mono font-bold flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-emerald-400" /> Range:
+            </span>
+            <div className="flex items-center gap-1">
+              {(['1M', '3M', '6M', '1Y', 'ALL'] as const).map((tf) => (
+                <button
+                  key={tf}
+                  onClick={() => setTimeframe(tf)}
+                  className={`px-3 py-1 rounded-lg text-xs font-extrabold font-mono transition-all ${
+                    timeframe === tf
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 scale-105'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+            {processedCandles.length > 0 && (
+              <span className="hidden md:inline-block text-[11px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-1 rounded-md border border-slate-800">
+                {timeframe === '1M' && '1 Month (22 Trading Days)'}
+                {timeframe === '3M' && '3 Months (65 Trading Days)'}
+                {timeframe === '6M' && '6 Months (130 Trading Days)'}
+                {timeframe === '1Y' && '1 Year (250 Trading Days)'}
+                {timeframe === 'ALL' && 'Full Historical Data'}
+                {' • '}
+                <span className="text-emerald-400 font-bold">
+                  {processedCandles[0]?.date} ➔ {processedCandles[processedCandles.length - 1]?.date}
+                </span>
+              </span>
+            )}
+          </div>
+
+          {/* Indicator & Subpanel Toggles */}
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+            {/* Chart Mode */}
             <button
-              key={tf}
-              onClick={() => setTimeframe(tf)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-extrabold font-mono transition-colors ${
-                timeframe === tf ? 'bg-emerald-500 text-slate-950 shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white'
+              onClick={() => setChartType(chartType === 'candlestick' ? 'area' : 'candlestick')}
+              className={`px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
+                chartType === 'candlestick' ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
               }`}
             >
-              {tf}
+              <Activity className="w-3.5 h-3.5" />
+              <span>{chartType === 'candlestick' ? 'Candles' : 'Area Line'}</span>
             </button>
-          ))}
+
+            {/* Bollinger Bands */}
+            <button
+              onClick={() => setShowBBands(!showBBands)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showBBands ? 'bg-sky-950/80 text-sky-300 border-sky-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              BBands
+            </button>
+
+            {/* Volume */}
+            <button
+              onClick={() => setShowVolume(!showVolume)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showVolume ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              Volume
+            </button>
+
+            {/* RSI */}
+            <button
+              onClick={() => setShowRsi(!showRsi)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showRsi ? 'bg-amber-950/80 text-amber-300 border-amber-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              RSI (14)
+            </button>
+
+            {/* OBV */}
+            <button
+              onClick={() => setShowObv(!showObv)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showObv ? 'bg-purple-950/80 text-purple-300 border-purple-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              OBV
+            </button>
+          </div>
         </div>
 
-        {/* Overlay & Subpanel Indicator Toggles */}
-        <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-          {/* Chart Mode */}
-          <button
-            onClick={() => setChartType(chartType === 'candlestick' ? 'area' : 'candlestick')}
-            className={`px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
-              chartType === 'candlestick' ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>{chartType === 'candlestick' ? 'Candles' : 'Area Line'}</span>
-          </button>
+        {/* Pattern Marker Control Bar (Hide/Show & Filter Individual Patterns) */}
+        <div className="pt-2 border-t border-slate-900 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Master Toggle */}
+            <button
+              onClick={() => setShowSignals(!showSignals)}
+              className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-colors ${
+                showSignals
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/50'
+                  : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Pattern Markers: {showSignals ? 'ON' : 'OFF'}</span>
+            </button>
 
-          {/* Bollinger Bands */}
-          <button
-            onClick={() => setShowBBands(!showBBands)}
-            className={`px-2.5 py-1 rounded-lg border transition-colors ${
-              showBBands ? 'bg-sky-950/80 text-sky-300 border-sky-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-            }`}
-          >
-            BBands
-          </button>
+            {showSignals && (
+              <>
+                {/* Specific Pattern Selector */}
+                <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400 text-[11px]">Filter Pattern:</span>
+                  <select
+                    value={selectedPatternFilter}
+                    onChange={(e) => setSelectedPatternFilter(e.target.value)}
+                    className="bg-transparent text-emerald-400 font-bold text-xs focus:outline-none cursor-pointer"
+                  >
+                    <option value="ALL" className="bg-slate-900 text-white">All Patterns</option>
+                    <option value="Bullish Flag" className="bg-slate-900 text-white">Bullish Flag 🚩</option>
+                    <option value="Double Bottom" className="bg-slate-900 text-white">Double Bottom Ⓦ</option>
+                    <option value="Cup & Handle" className="bg-slate-900 text-white">Cup & Handle 🍵</option>
+                    <option value="Ascending Triangle" className="bg-slate-900 text-white">Ascending Triangle 🔺</option>
+                    <option value="VCP Compression" className="bg-slate-900 text-white">VCP Coil ⚡</option>
+                    <option value="Volume Surge" className="bg-slate-900 text-white">Volume Surge ⚡</option>
+                  </select>
+                </div>
 
-          {/* Volume */}
-          <button
-            onClick={() => setShowVolume(!showVolume)}
-            className={`px-2.5 py-1 rounded-lg border transition-colors ${
-              showVolume ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-            }`}
-          >
-            Volume
-          </button>
+                {/* Scope Switcher: Recent 7 Days vs Full Timeframe */}
+                <button
+                  onClick={() => setShowAllWindowMarkers(!showAllWindowMarkers)}
+                  className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                    showAllWindowMarkers
+                      ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40'
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                  title="Toggle between showing markers for recent 7 days only vs entire selected timeframe window"
+                >
+                  Scope: {showAllWindowMarkers ? `Full ${timeframe} Window` : 'Recent 7 Days'}
+                </button>
+              </>
+            )}
+          </div>
 
-          {/* RSI */}
-          <button
-            onClick={() => setShowRsi(!showRsi)}
-            className={`px-2.5 py-1 rounded-lg border transition-colors ${
-              showRsi ? 'bg-amber-950/80 text-amber-300 border-amber-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-            }`}
-          >
-            RSI (14)
-          </button>
-
-          {/* OBV */}
-          <button
-            onClick={() => setShowObv(!showObv)}
-            className={`px-2.5 py-1 rounded-lg border transition-colors ${
-              showObv ? 'bg-purple-950/80 text-purple-300 border-purple-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-            }`}
-          >
-            OBV
-          </button>
-
-          {/* Breakout Signals */}
-          <button
-            onClick={() => setShowSignals(!showSignals)}
-            className={`px-2.5 py-1 rounded-lg border transition-colors ${
-              showSignals ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-            }`}
-          >
-            {showSignals ? '7-Day Patterns: ON' : '7-Day Patterns: OFF'}
-          </button>
+          <div className="text-[11px] text-slate-500">
+            {totalStockBreakouts} breakout signal{totalStockBreakouts === 1 ? '' : 's'} identified in active {timeframe} window
+          </div>
         </div>
       </div>
 
