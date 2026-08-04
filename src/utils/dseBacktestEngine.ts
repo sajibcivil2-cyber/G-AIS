@@ -987,6 +987,11 @@ export function normalizeDateString(rawDate: string): string {
 
 // Comprehensive DSE Sector Dictionary
 export const DSE_SECTOR_MAP: Record<string, string> = {
+  // Jute
+  SONALIANSH: 'Jute',
+  NORTHERN: 'Jute',
+  JUTESPINN: 'Jute',
+
   // Pharmaceuticals & Chemicals
   BEXIMCO: 'Pharmaceuticals & Chemicals',
   SQURPHARMA: 'Pharmaceuticals & Chemicals',
@@ -1099,7 +1104,6 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   MALEKSPIN: 'Engineering',
   BDAUTOS: 'Engineering',
   OIMEX: 'Engineering',
-  SAIFPOWER: 'Engineering',
   RSRMSTEEL: 'Engineering',
   BBS: 'Engineering',
   BBSCABLES: 'Engineering',
@@ -1205,7 +1209,7 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   SONARBAINS: 'Insurance General',
   STANDARDIN: 'Insurance General',
   SUNLIFEINS: 'Insurance Life',
-  UNIQUEHRL: 'Insurance General',
+  UNIQUEHRL: 'Travel & Leisure',
   AGRANIINS: 'Insurance General',
   ASIAPACINS: 'Insurance General',
   CRYSTALINS: 'Insurance General',
@@ -1263,6 +1267,7 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   // Services & Real Estate
   EHL: 'Services & Real Estate',
   SAMORITA: 'Services & Real Estate',
+  SAIFPOWER: 'Services & Real Estate',
 
   // Mutual Funds
   '1JANATAMF': 'Mutual Funds',
@@ -1352,19 +1357,20 @@ export function inferDseSector(symbol: string, rawSector?: string, rawName?: str
   if (/PHARM|CHEM|LAB|DRUG|BIO|MED|SQUR|RENATA|ACI|MARICO|BEACON|IBN|ORION|ACME|ADVENT|SILCO|KOHINOOR|KEYA|SALVO|WATA|TECHNODRUG|JMI/i.test(target)) return 'Pharmaceuticals & Chemicals';
   if (/TEX|SPIN|DENIM|FABRIC|GARMENT|WOVEN|KNIT|COT|ENVOY|SQUARE|SIMTEX|MATIN|PACIFIC|MODERN|REGENT|RNSPIN|SAIHAM|SHEPHERD|TALLU|MONNOFAB/i.test(target)) return 'Textile';
   if (/LIFE|SANDHANI/i.test(target)) return 'Insurance Life';
-  if (/INS|INSURANCE|DELTA|MEGHNA|GREEN|RELIANCE|ASIA|BGIC|PRAGATI|PROVATI|REPUBLICA|NITOL|SONAR|UNIQUE|FAREAST|FEDERAL|JANATA|KARNAPHULI|PEOPLES|POPULAR|RUPALI|SENAKALYAN|PRIMEINS/i.test(target)) return 'Insurance General';
+  if (/\bINS\b|INSURANCE|GREENDELT|RELIANCINS|ASIAINS|BGIC|PRAGATIINS|PROVATIINS|REPUBLICA|NITOLINS|SONARBAINS|FAREASTINS|FEDERALINS|JANATAINS|KARNAPHULI|PEOPLESINS|RUPALIINS|SENAKALYAN|PRIMEINS|CENTRALINS|CONTININS|PARAMOUT|CITYINS|STANDARDIN|AGRANIINS|ASIAPACINS|CRYSTALINS|DHAKAAINS|EXIMINS|GLOBALINS|ISLAMIINS|MERCANINS|PROGRESSIVE|UNIONINS/i.test(target)) return 'Insurance General';
   if (/CEM|CEMENT|LHBL|HEIDELB|CROWN|MISEM|CONFID|ARAMIT/i.test(target)) return 'Cement';
   if (/CER|CERAMIC|\\bRAK\\b|RAKCERAMIC|\\bSHIN\\b|SHINECPA|MONNOCERA|FUWANG/i.test(target)) return 'Ceramic Sector';
   if (/POWER|GAS|OIL|PETRO|ENERGY|GRID|ELECTRIC|TITAS|JAMUNAOIL|PADMA|DESCO|UPGDCL|SUMMIT|MJL|KPCL|DORIN|BARAKA|SHAHJIBAZA|LINDE/i.test(target)) return 'Fuel & Power';
-  if (/STEEL|ISPAT|AUTO|CABLE|ENGINEER|METAL|PIPE|ALLOY|BSRM|GPH|WALTON|SINGER|KDS|AFTAB|RUNNER|COPPER|OIMEX|SAIFPOWER|RSRM|BBS|ANWAR|DESH|ECABLE/i.test(target)) return 'Engineering';
+  if (/STEEL|ISPAT|AUTO|CABLE|ENGINEER|METAL|PIPE|ALLOY|BSRM|GPH|WALTON|SINGER|KDS|AFTAB|RUNNER|COPPER|OIMEX|RSRM|BBS|ANWAR|DESH|ECABLE/i.test(target)) return 'Engineering';
   if (/FOOD|FEED|AGRO|BEV|ALLIED|SUGAR|SEA|POULTRY|GRAIN|BATBC|OLYMPIC|LOVELLO|EMERALD|FINEFOODS|AMCLPRAN|FUWANGFOOD|BEACHHATCH|RAHIMA|ZEAL/i.test(target)) return 'Food & Allied';
-  if (/IT|TEL|NET|TECH|SYS|INFO|CYBER|SOFTWARE|COMM|ADN|GENEX|AAMRA|BDCOM|AGNI|INTECH|E-GEN/i.test(target)) return 'IT Sector';
+  if (/\bIT\b|\bITC\b|TECH|CYBER|SOFTWARE|ADN|GENEX|AAMRA|BDCOM|AGNI|INTECH|E-GEN|DAFODILCOM/i.test(target)) return 'IT Sector';
   if (/PAPER|PULP|PRINT|BOARD|HAKKANI|SONALI|BPPAPER/i.test(target)) return 'Paper & Printing';
   if (/LEATHER|TANRY|SHOE|FOOT|BATA|FORTUNE|SAMATA|APEX/i.test(target)) return 'Tannery Industries';
   if (/HOTEL|RESORT|TRAVEL|LEISURE|PEARL|PENINSULA|SEAPEARL/i.test(target)) return 'Travel & Leisure';
-  if (/EHL|SAMORITA|EASTERN|REAL|SERVI/i.test(target)) return 'Services & Real Estate';
+  if (/EHL|SAMORITA|EASTERN|REAL|SERVI|SAIFPOWER/i.test(target)) return 'Services & Real Estate';
   if (/\bGP\b|TELE|ROBI|BSCCL|GRAMEENPHONE/i.test(target)) return 'Telecommunication';
 
+  if (/JUTE|SONALIANSH|NORTHERN|JUTESPINN/i.test(target)) return 'Jute';
   if (/BOND|DEBENTURE/i.test(target)) return 'Corporate Bond';
   return 'Miscellaneous';
 }
@@ -1797,6 +1803,21 @@ export function detectEarlyTrendIgnition(candles: DseStockCandle[]): EarlyTrendA
   const signalsList: string[] = [];
   let score = 20;
 
+  // Higher-low structure over last 3 swing points (proves stepping-up accumulation)
+  const swingLows: number[] = [];
+  for (let i = n - 15; i < n - 1; i++) {
+    if (i < 1 || i >= n - 1) continue;
+    if (candles[i].low < candles[i - 1].low && candles[i].low < candles[i + 1].low) {
+      swingLows.push(candles[i].low);
+    }
+  }
+  const hasHigherLows = swingLows.length >= 2 && swingLows[swingLows.length - 1] > swingLows[swingLows.length - 2];
+
+  if (hasHigherLows) {
+    score += 15;
+    signalsList.push('Higher-low structure confirms stepped accumulation');
+  }
+
   if (is5Above20) {
     score += 25;
     signalsList.push('5d MA Golden Crossover above 20d MA');
@@ -1929,7 +1950,7 @@ export function runDseStockScreener(
 
     if (profitPotentialScore >= 70 && (isVolumeSurge || (rvol20 >= 2.0 && isPriceGreen)) && passesYoy && passesTurnover) {
       decisionStatus = 'STRONG_BUY';
-    } else if (earlyTrend.stage === 'STAGE_2_IGNITION' && passesYoy) {
+    } else if ((earlyTrend.stage === 'STAGE_2_IGNITION' || earlyTrend.stage === 'STAGE_1_EARLY_COIL') && passesYoy) {
       decisionStatus = 'EARLY_TREND_IGNITION';
     } else if (profitPotentialScore >= 55 || (isVolumeDryUp && isTightConsolidation && passesYoy)) {
       decisionStatus = 'WATCHLIST_BREAKOUT';

@@ -1,6 +1,6 @@
 {
-  "name": "Web App Output Quality Analyzer",
-  "description": "Comprehensive web app code quality, output performance, accessibility, security, and AI anti-pattern analysis tool.",
+  "name": "DSE Stock Screener & Backtester",
+  "description": "Comprehensive Dhaka Stock Exchange backtesting engine, technical screener, and early trend ignition radar.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
