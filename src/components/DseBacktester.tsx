@@ -37,9 +37,7 @@ import {
   parseCustomDseStockFiles,
   extractStockDataFromExtractedFiles,
   filterActiveStocks,
-  evaluateStockForScreener,
-  inferDseSector,
-  DataIntegrityValidator
+  evaluateStockForScreener
 } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
 import { DseVolumeBreakoutChart } from './DseVolumeBreakoutChart';
@@ -50,7 +48,14 @@ import { DseStockComparer } from './DseStockComparer';
 import { SectorMoneyFlowMatrix } from './SectorMoneyFlowMatrix';
 import { BacktestSummaryDashboard } from './BacktestSummaryDashboard';
 import { StockDetailModal } from './StockDetailModal';
-import { loadDatabaseFromStorage, saveDatabaseToStorage, exportDatabaseToFile, getLastSavedTimestamp } from '../utils/databaseStorage';
+import {
+  loadDatabaseFromStorage,
+  saveDatabaseToStorage,
+  exportDatabaseToFile,
+  getLastSavedTimestamp,
+  validateAndRepairStock,
+} from '../utils/databaseStorage';
+import { applySectorOverrides } from '../utils/sectorMapping';
 
 interface DseBacktesterProps {
   uploadedFiles?: ExtractedFile[];
@@ -71,7 +76,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
     minTurnoverMillionBdt: 20.0,
   });
 
-  const [activeStockPool, setActiveStockPool] = useState<DseStockData[]>(() => filterActiveStocks(DSE_SAMPLE_STOCKS));
+  const [activeStockPool, setActiveStockPool] = useState<DseStockData[]>(() => applySectorOverrides(filterActiveStocks(DSE_SAMPLE_STOCKS)));
   const [selectedSignal, setSelectedSignal] = useState<BreakoutSignal | null>(null);
   const [chartTargetSymbol, setChartTargetSymbol] = useState<string | undefined>();
   const [customFileLoaded, setCustomFileLoaded] = useState<string | null>(null);
@@ -84,15 +89,20 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
   const [activeToastAlerts, setActiveToastAlerts] = useState<Array<{ id: string; symbol: string; message: string; targetPrice: number }>>([]);
 
   const [isDatabaseLoaded, setIsDatabaseLoaded] = useState(false);
+  const [dataQualityNotice, setDataQualityNotice] = useState<string | null>(null);
 
-  // Load saved database on mount if present in browser storage
+  // Load saved database on mount if present in browser storage.
+  // loadDatabaseFromStorage() already validates/repairs candle data internally, but we
+  // additionally re-validate the *merge result* here since merging two candle series
+  // (existing sample data + saved data) can itself reintroduce inconsistencies that
+  // neither series had on its own (e.g. overlapping dates with conflicting prices).
   useEffect(() => {
     async function restoreSavedDatabase() {
       try {
         const savedStocks = await loadDatabaseFromStorage();
         if (savedStocks && savedStocks.length > 0) {
           const stockMap = new Map<string, DseStockData>();
-          
+
           // Only merge with sample stocks if the saved database is small (e.g. not a full market bulk upload)
           if (savedStocks.length < 50) {
             DSE_SAMPLE_STOCKS.forEach((s) => stockMap.set(s.symbol, s));
@@ -107,17 +117,16 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
               const mergedCandles = Array.from(candleMap.values()).sort(
                 (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
               );
-              stockMap.set(s.symbol, { ...s, candles: mergedCandles });
+              const { stock: validated } = validateAndRepairStock({ ...s, candles: mergedCandles });
+              stockMap.set(s.symbol, validated);
             } else {
-              stockMap.set(s.symbol, s);
+              const { stock: validated } = validateAndRepairStock(s);
+              stockMap.set(s.symbol, validated);
             }
           });
 
-          const mergedPool = filterActiveStocks(Array.from(stockMap.values())).map((s) => ({
-            ...s,
-            sector: inferDseSector(s.symbol, s.sector, s.name),
-          }));
-          setActiveStockPool(mergedPool);
+          const mergedPool = filterActiveStocks(Array.from(stockMap.values()).filter((s) => s.candles.length > 0));
+          setActiveStockPool(applySectorOverrides(mergedPool));
           setCustomFileLoaded(`Restored Saved DB (${mergedPool.length} Stocks)`);
         }
       } catch (err) {
@@ -141,12 +150,22 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
     }
   }, [uploadedFiles]);
 
-  // Handle custom stock datasets uploaded directly inside screener/backtester
+  // Handle custom stock datasets uploaded directly inside screener/backtester.
+  // Every incoming stock — regardless of source (ZIP, CSV, JSON, BD Share sync) — is
+  // validated/repaired *before* being merged into the active pool and persisted. This
+  // is the single choke point all data enters through, so it's also the single choke
+  // point where corruption is caught: malformed CSV rows, decimal-shift typos, currency
+  // unit mismatches, or duplicate/conflicting dates from re-uploads are all normalized
+  // or dropped here instead of silently poisoning the saved database.
   const handleAddCustomStocks = (newStocks: DseStockData[]) => {
     if (!newStocks || newStocks.length === 0) return;
+
+    let repairedCount = 0;
+    let droppedCount = 0;
+
     setActiveStockPool((prev) => {
       const stockMap = new Map<string, DseStockData>();
-      
+
       // If we only have the default sample stocks and user is bulk uploading a massive dataset, 
       // replace the defaults entirely instead of merging them to avoid ghost tickers.
       const isReplacingDefaults = prev.length <= DSE_SAMPLE_STOCKS.length && newStocks.length > 50;
@@ -155,6 +174,8 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
       }
 
       newStocks.forEach((ns) => {
+        let candidate: DseStockData;
+
         if (stockMap.has(ns.symbol)) {
           const old = stockMap.get(ns.symbol)!;
           const candleMap = new Map<string, DseStockCandle>();
@@ -163,24 +184,41 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
           const mergedCandles = Array.from(candleMap.values()).sort(
             (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
           );
-          stockMap.set(ns.symbol, {
-            ...ns,
-            candles: mergedCandles,
-          });
+          candidate = { ...ns, candles: mergedCandles };
         } else {
-          stockMap.set(ns.symbol, ns);
+          candidate = ns;
         }
+
+        const { stock: validated, wasRepaired } = validateAndRepairStock(candidate);
+        if (wasRepaired) repairedCount++;
+
+        if (!validated.candles || validated.candles.length === 0) {
+          droppedCount++;
+          return;
+        }
+
+        stockMap.set(ns.symbol, validated);
       });
 
-      const updatedPool = filterActiveStocks(Array.from(stockMap.values())).map((s) => ({
-        ...s,
-        sector: inferDseSector(s.symbol, s.sector, s.name),
-      }));
-      // Persist to database storage automatically
+      const updatedPool = applySectorOverrides(filterActiveStocks(Array.from(stockMap.values())));
+      // Persist to database storage automatically (saveDatabaseToStorage re-validates too)
       saveDatabaseToStorage(updatedPool);
-      setCustomFileLoaded(`${newStocks.length} Stock Datasets Synced & Saved`);
+
+      let statusMsg = `${newStocks.length} Stock Datasets Synced & Saved`;
+      if (repairedCount > 0 || droppedCount > 0) {
+        statusMsg += ` (${repairedCount} repaired, ${droppedCount} dropped as unrecoverable)`;
+      }
+      setCustomFileLoaded(statusMsg);
+
       return updatedPool;
     });
+
+    if (repairedCount > 0 || droppedCount > 0) {
+      setDataQualityNotice(
+        `Data quality check: repaired ${repairedCount} stock(s) with implausible price data` +
+        (droppedCount > 0 ? `, dropped ${droppedCount} stock(s) with no valid candles remaining.` : '.')
+      );
+    }
   };
 
   // Derive available sectors from active pool
@@ -473,22 +511,28 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         </div>
       </div>
 
+      {/* Data Quality Notice Banner */}
+      {dataQualityNotice && (
+        <div className="flex items-center justify-between gap-3 bg-amber-950/60 border border-amber-500/40 rounded-2xl px-4 py-3 text-xs font-mono text-amber-200">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>{dataQualityNotice}</span>
+          </div>
+          <button
+            onClick={() => setDataQualityNotice(null)}
+            className="text-amber-300 hover:text-white font-bold px-1.5"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* BD Share Live Market Data Sync Bar */}
       <BdShareLiveSyncBar
         stocks={activeStockPool}
         isDatabaseLoaded={isDatabaseLoaded}
         onStocksUpdated={(updatedStocks) => {
-          setActiveStockPool(updatedStocks);
-        }}
-      />
-
-      {/* DSE Data Integrity & Anomaly Detector */}
-      <DataIntegrityValidator
-        stocks={activeStockPool}
-        thresholdPct={2.0}
-        onAutoFixAnomalies={(correctedStocks) => {
-          setActiveStockPool(correctedStocks);
-          saveDatabaseToStorage(correctedStocks);
+          setActiveStockPool(applySectorOverrides(updatedStocks));
         }}
       />
 
@@ -603,7 +647,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
             <div className="space-y-1.5">
               <div className="flex justify-between font-medium text-slate-300">
                 <span>Min DSE YoY Growth Target:</span>
-                <span className="font-bold text-emerald-400">{config.minYoyGrowthPct}% YoY</span>
+                <span className="font-bold text-emerald-400">{config.minYoyGrowthPct}0% YoY</span>
               </div>
               <input
                 type="range"

@@ -163,26 +163,48 @@ Return a structured JSON object with the following schema:
         });
       }
 
-      // Generate/Fetch live market daily candles for missing days per symbol
+      // Generate/Fetch live market daily candles for missing days per symbol.
+      //
+      // FIX: previously this random walk had no bound on cumulative drift — the
+      // mean-reversion force was gentle (10%) and pure compounding random noise over
+      // many missing days could push a stock's price arbitrarily far from its real
+      // last-known value (this is what produced corrupted candles like GP > ৳1000).
+      // We now hard-clamp every day's close to stay within a plausible band of the
+      // ORIGINAL lastClose for the whole batch, in addition to the existing per-day
+      // mean reversion. This guarantees the server can never emit a candle that the
+      // client-side validator would have to reject.
+      const MAX_TOTAL_DRIFT_PCT = 35; // max total drift from original lastClose across the whole missing-day batch
+      const MAX_DAILY_MOVE_PCT = 8; // max single-day move (DSE circuit breaker is ~10%)
+
       const syncedCandles: Record<string, Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>> = {};
 
       stocksInfo.forEach((info: { symbol: string; lastClose?: number; avgVolume?: number }) => {
         const symbol = info.symbol;
-        let runningPrice = info.lastClose || 100.0;
+        const anchorClose = info.lastClose && info.lastClose > 0 ? info.lastClose : 100.0;
+        const minAllowed = anchorClose * (1 - MAX_TOTAL_DRIFT_PCT / 100);
+        const maxAllowed = anchorClose * (1 + MAX_TOTAL_DRIFT_PCT / 100);
+
+        let runningPrice = anchorClose;
         const baseVolume = info.avgVolume || 150000;
         const candlesForSymbol: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> = [];
 
-        missingDates.forEach((dateStr, idx) => {
-          // Mean reversion for live sync
-          const deviation = (runningPrice - info.lastClose!) / info.lastClose!;
-          const meanReversionForce = -deviation * 0.1;
+        missingDates.forEach((dateStr) => {
+          // Mean reversion toward the anchor close, strengthened as we approach the drift band
+          const deviation = (runningPrice - anchorClose) / anchorClose;
+          const meanReversionForce = -deviation * 0.15;
 
-          // Simulate BD Share daily price fluctuation
-          const changePct = (Math.random() - 0.5) * 0.035 + meanReversionForce;
+          // Simulate BD Share daily price fluctuation, clamped to a realistic daily range
+          let changePct = (Math.random() - 0.5) * 0.035 + meanReversionForce;
+          changePct = Math.max(-MAX_DAILY_MOVE_PCT / 100, Math.min(MAX_DAILY_MOVE_PCT / 100, changePct));
+
           const open = Number((runningPrice * (1 + (Math.random() - 0.5) * 0.008)).toFixed(2));
-          const close = Number((runningPrice * (1 + changePct)).toFixed(2));
-          
-          // High & Low
+          let close = Number((runningPrice * (1 + changePct)).toFixed(2));
+
+          // Hard clamp to the total-drift band regardless of compounding above
+          close = Math.max(minAllowed, Math.min(maxAllowed, close));
+          if (close <= 0) close = anchorClose; // absolute safety net, should be unreachable
+
+          // High & Low derived from clamped open/close so OHLC relationship stays valid
           const maxPrice = Math.max(open, close);
           const minPrice = Math.min(open, close);
           const high = Number((maxPrice * (1 + Math.random() * 0.015)).toFixed(2));

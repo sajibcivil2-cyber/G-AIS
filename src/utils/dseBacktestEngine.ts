@@ -47,7 +47,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
   {
     symbol: 'BEXIMCO',
     name: 'Beximco Limited',
-    sector: 'Diversified / Textiles',
+    sector: 'Miscellaneous',
     yoyGrowthPct: 4.1,
     peRatio: 14.5,
     avgTurnoverBdtMillion: 210.0,
@@ -119,7 +119,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
   {
     symbol: 'FUWANGCER',
     name: 'Fuwang Ceramic Industry Ltd.',
-    sector: 'Ceramics',
+    sector: 'Ceramic Sector',
     yoyGrowthPct: 4.8,
     peRatio: 19.5,
     avgTurnoverBdtMillion: 55.4,
@@ -1054,29 +1054,29 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   MERCANBANK: 'Bank',
   SOUTHEASTB: 'Bank',
 
-  // Financial Institutions
-  IDLC: 'Financial Institutions',
-  LANKABAFIN: 'Financial Institutions',
-  IPDC: 'Financial Institutions',
-  BAYLEASING: 'Financial Institutions',
-  GSPFINANCE: 'Financial Institutions',
-  PHOENIXFIN: 'Financial Institutions',
-  ISLAMICFIN: 'Financial Institutions',
-  MIDASFIN: 'Financial Institutions',
-  DBH: 'Financial Institutions',
-  ULC: 'Financial Institutions',
-  BFINANCE: 'Financial Institutions',
-  PREMIERLEA: 'Financial Institutions',
-  FAREASTFIN: 'Financial Institutions',
-  FASFIN: 'Financial Institutions',
-  FIRSTFIN: 'Financial Institutions',
-  INDUSTRIAL: 'Financial Institutions',
-  UNIONCAP: 'Financial Institutions',
-  BIFC: 'Financial Institutions',
-  NHFIL: 'Financial Institutions',
-  PLFSL: 'Financial Institutions',
-  PRIMEFIN: 'Financial Institutions',
-  UNIONFIN: 'Financial Institutions',
+  // Financial Institution
+  IDLC: 'Financial Institution',
+  LANKABAFIN: 'Financial Institution',
+  IPDC: 'Financial Institution',
+  BAYLEASING: 'Financial Institution',
+  GSPFINANCE: 'Financial Institution',
+  PHOENIXFIN: 'Financial Institution',
+  ISLAMICFIN: 'Financial Institution',
+  MIDASFIN: 'Financial Institution',
+  DBH: 'Financial Institution',
+  ULC: 'Financial Institution',
+  BFINANCE: 'Financial Institution',
+  PREMIERLEA: 'Financial Institution',
+  FAREASTFIN: 'Financial Institution',
+  FASFIN: 'Financial Institution',
+  FIRSTFIN: 'Financial Institution',
+  INDUSTRIAL: 'Financial Institution',
+  UNIONCAP: 'Financial Institution',
+  BIFC: 'Financial Institution',
+  NHFIL: 'Financial Institution',
+  PLFSL: 'Financial Institution',
+  PRIMEFIN: 'Financial Institution',
+  UNIONFIN: 'Financial Institution',
 
   // Engineering
   BSRMSTEEL: 'Engineering',
@@ -1117,7 +1117,7 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   EMERALDOIL: 'Food & Allied',
   FINEFOODS: 'Food & Allied',
   MEGHNABAN: 'Food & Allied',
-  AMCL: 'Food & Allied',
+  AMCLPRAN: 'Food & Allied',
   FUWANGAO: 'Food & Allied',
   BEACHHATCH: 'Food & Allied',
   RAHIMAFOOD: 'Food & Allied',
@@ -1185,48 +1185,48 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   LINDEBD: 'Fuel & Power',
 
   // Insurance
-  GREENDELT: 'Insurance',
-  PHOENIXINS: 'Insurance',
-  EASTLAND: 'Insurance',
-  DELTALIFE: 'Insurance',
-  MEGHNALIFE: 'Insurance',
-  CENTRALINS: 'Insurance',
-  CONTININS: 'Insurance',
-  PARAMOUT: 'Insurance',
-  RELIANCINS: 'Insurance',
-  ASIAINS: 'Insurance',
-  BGIC: 'Insurance',
-  CITYINS: 'Insurance',
-  PRAGATIINS: 'Insurance',
-  PRIMEINS: 'Insurance',
-  PROVATIINS: 'Insurance',
-  REPUBLICA: 'Insurance',
-  NITOLINS: 'Insurance',
-  SONARBAINS: 'Insurance',
-  STANDARDIN: 'Insurance',
-  SUNLIFEINS: 'Insurance',
-  UNIQUEHRL: 'Insurance',
-  AGRANIINS: 'Insurance',
-  ASIAPACINS: 'Insurance',
-  CRYSTALINS: 'Insurance',
-  DHAKAAINS: 'Insurance',
-  EXIMINS: 'Insurance',
-  FAREASTINS: 'Insurance',
-  FEDERALINS: 'Insurance',
-  GLOBALINS: 'Insurance',
-  ISLAMIINS: 'Insurance',
-  JANATAINS: 'Insurance',
-  KARNAPHULI: 'Insurance',
-  MERCANINS: 'Insurance',
-  NATLIFEINS: 'Insurance',
-  PEOPLESINS: 'Insurance',
-  POPULARLIF: 'Insurance',
-  PROGRESSIVE: 'Insurance',
-  RUPALIINS: 'Insurance',
-  SANDHANI: 'Insurance',
-  SENAKALYAN: 'Insurance',
-  SONARLIFE: 'Insurance',
-  UNIONINS: 'Insurance',
+  GREENDELT: 'Insurance General',
+  PHOENIXINS: 'Insurance General',
+  EASTLAND: 'Insurance General',
+  DELTALIFE: 'Insurance Life',
+  MEGHNALIFE: 'Insurance Life',
+  CENTRALINS: 'Insurance General',
+  CONTININS: 'Insurance General',
+  PARAMOUT: 'Insurance General',
+  RELIANCINS: 'Insurance General',
+  ASIAINS: 'Insurance General',
+  BGIC: 'Insurance General',
+  CITYINS: 'Insurance General',
+  PRAGATIINS: 'Insurance General',
+  PRIMEINS: 'Insurance General',
+  PROVATIINS: 'Insurance General',
+  REPUBLICA: 'Insurance General',
+  NITOLINS: 'Insurance General',
+  SONARBAINS: 'Insurance General',
+  STANDARDIN: 'Insurance General',
+  SUNLIFEINS: 'Insurance Life',
+  UNIQUEHRL: 'Insurance General',
+  AGRANIINS: 'Insurance General',
+  ASIAPACINS: 'Insurance General',
+  CRYSTALINS: 'Insurance General',
+  DHAKAAINS: 'Insurance General',
+  EXIMINS: 'Insurance General',
+  FAREASTINS: 'Insurance General',
+  FEDERALINS: 'Insurance General',
+  GLOBALINS: 'Insurance General',
+  ISLAMIINS: 'Insurance General',
+  JANATAINS: 'Insurance General',
+  KARNAPHULI: 'Insurance General',
+  MERCANINS: 'Insurance General',
+  NATLIFEINS: 'Insurance Life',
+  PEOPLESINS: 'Insurance General',
+  POPULARLIF: 'Insurance Life',
+  PROGRESSIVE: 'Insurance General',
+  RUPALIINS: 'Insurance General',
+  SANDHANI: 'Insurance Life',
+  SENAKALYAN: 'Insurance General',
+  SONARLIFE: 'Insurance Life',
+  UNIONINS: 'Insurance General',
 
   // Cement
   LHBL: 'Cement',
@@ -1237,11 +1237,11 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   ARAMITCEM: 'Cement',
   MEGHNACEM: 'Cement',
 
-  // Ceramics
-  FUWANGCER: 'Ceramics',
-  RAKCERAMIC: 'Ceramics',
-  SHINPATO: 'Ceramics',
-  MONNOCERA: 'Ceramics',
+  // Ceramic Sector
+  FUWANGCER: 'Ceramic Sector',
+  RAKCERAMIC: 'Ceramic Sector',
+  SHINPATO: 'Ceramic Sector',
+  MONNOCERA: 'Ceramic Sector',
 
   // Tannery Industries
   APEXTANRY: 'Tannery Industries',
@@ -1313,12 +1313,13 @@ export function inferDseSector(symbol: string, rawSector?: string, rawName?: str
   if (/^\d{2}_/.test(sym)) {
     const stripped = sym.replace(/^\d{2}_/, '').replace(/_/g, ' ');
     if (/BANK/i.test(stripped)) return 'Bank';
-    if (/FINAN/i.test(stripped)) return 'Financial Institutions';
+    if (/FINAN/i.test(stripped)) return 'Financial Institution';
     if (/PHARMA/i.test(stripped)) return 'Pharmaceuticals & Chemicals';
     if (/TEXT/i.test(stripped)) return 'Textile';
-    if (/INSUR/i.test(stripped)) return 'Insurance';
+    if (/INSURANCE.*LIFE/i.test(stripped)) return 'Insurance Life';
+    if (/INSUR/i.test(stripped)) return 'Insurance General';
     if (/CEM/i.test(stripped)) return 'Cement';
-    if (/CERAM/i.test(stripped)) return 'Ceramics';
+    if (/CERAM/i.test(stripped)) return 'Ceramic Sector';
     if (/FUEL|POWER/i.test(stripped)) return 'Fuel & Power';
     if (/ENGIN/i.test(stripped)) return 'Engineering';
     if (/FOOD/i.test(stripped)) return 'Food & Allied';
@@ -1330,6 +1331,8 @@ export function inferDseSector(symbol: string, rawSector?: string, rawName?: str
     if (/TELE/i.test(stripped)) return 'Telecommunication';
     if (/MUTUAL|FUND/i.test(stripped)) return 'Mutual Funds';
     if (/JUTE/i.test(stripped)) return 'Jute';
+    if (/BOND|DEBENTURE/i.test(stripped)) return 'Corporate Bond';
+    if (/MISC/i.test(stripped)) return 'Miscellaneous';
     return stripped;
   }
 
@@ -1343,25 +1346,27 @@ export function inferDseSector(symbol: string, rawSector?: string, rawName?: str
   // 2. Pattern & Name Heuristics
   const target = `${cleanSym} ${(rawName || '').toUpperCase()}`;
 
-  if (/MUTUAL|FUND|MF|MF1|GRAMEEN2|EBL1ST|IFIC1ST|NCCBL|1STPR|POPULAR1MF|SEBL/i.test(target)) return 'Mutual Funds';
-  if (/BANK|BNK|ISLAMI|DUTCH|PUBALI|BRAC|PRIME|CITY|DHAKA|EXIM|JAMUNA|MIDLAND|NCC|NRB|ONEBANK|SBAC|SHAHJALAL|SIBL|TRUST|UCB|UTTARA|MERCANTILE|SOUTHEAST/i.test(target)) return 'Bank';
-  if (/FIN|LEASE|CAPITAL|HOLDING|FINANCE|IPDC|IDLC|DBH|GSP|LANKABA|MIDAS|BAY|PHOENIX|FAS|BIFC|NHFIL|PLFSL/i.test(target)) return 'Financial Institutions';
+  if (/MUTUAL|FUND|MF\b|MF1|GRAMEEN2|GRAMEENS2|EBL1ST|IFIC1ST|NCCBL|1STPR|POPULAR1MF|SEBL|ICBAMCL|ICBEP|ICBSONALI|ICB3RD|PF1ST|PRIME1|IFILISL|AIBL1ST|CAPM|FBFIF|ICBAGRANI|LRGLOB|MBL1ST|NLI1ST|PHPMF|RELIANCE1|SEML|TRUSTB1|VAML|ATCSLGF|DBH1ST|EBLNRB|EXIM1ST|GREENDEL/i.test(target)) return 'Mutual Funds';
+  if (/BANK|BNK|ISLAMIBANK|DUTCHBANGL|PUBALIBANK|BRACBANK|PRIMEBANK|CITYBANK|DHAKABANK|EXIMBANK|JAMUNABANK|MIDLANDBNK|NCCBANK|NRBBANK|ONEBANK|SBACBANK|SHAHJABANK|SIBL|TRUSTBANK|UCB|UTTARABANK|MERCANBANK|SOUTHEASTB/i.test(target)) return 'Bank';
+  if (/FIN|LEASE|CAPITAL|HOLDING|FINANCE|IPDC|IDLC|DBH|GSP|LANKABA|MIDAS|BAY|PHOENIXFIN|FASFIN|BIFC|NHFIL|PLFSL/i.test(target)) return 'Financial Institution';
   if (/PHARM|CHEM|LAB|DRUG|BIO|MED|SQUR|RENATA|ACI|MARICO|BEACON|IBN|ORION|ACME|ADVENT|SILCO|KOHINOOR|KEYA|SALVO|WATA|TECHNODRUG|JMI/i.test(target)) return 'Pharmaceuticals & Chemicals';
-  if (/TEX|SPIN|DENIM|FABRIC|GARMENT|WOVEN|KNIT|COT|ENVOY|SQUARE|SIMTEX|MATIN|PACIFIC|MODERN|REGENT|RNSPIN|SAIHAM|SHEPHERD|TALLU/i.test(target)) return 'Textile';
-  if (/INS|INSURANCE|LIFE|DELTA|MEGHNA|GREEN|RELIANCE|ASIA|BGIC|PRAGATI|PROVATI|REPUBLICA|NITOL|SONAR|SUNLIFE|UNIQUE|FAREAST|FEDERAL|JANATA|KARNAPHULI|PEOPLES|POPULAR|RUPALI|SANDHANI|SENAKALYAN/i.test(target)) return 'Insurance';
+  if (/TEX|SPIN|DENIM|FABRIC|GARMENT|WOVEN|KNIT|COT|ENVOY|SQUARE|SIMTEX|MATIN|PACIFIC|MODERN|REGENT|RNSPIN|SAIHAM|SHEPHERD|TALLU|MONNOFAB/i.test(target)) return 'Textile';
+  if (/LIFE|SANDHANI/i.test(target)) return 'Insurance Life';
+  if (/INS|INSURANCE|DELTA|MEGHNA|GREEN|RELIANCE|ASIA|BGIC|PRAGATI|PROVATI|REPUBLICA|NITOL|SONAR|UNIQUE|FAREAST|FEDERAL|JANATA|KARNAPHULI|PEOPLES|POPULAR|RUPALI|SENAKALYAN|PRIMEINS/i.test(target)) return 'Insurance General';
   if (/CEM|CEMENT|LHBL|HEIDELB|CROWN|MISEM|CONFID|ARAMIT/i.test(target)) return 'Cement';
-  if (/CER|CERAMIC|RAK|SHIN|MONNO|FUWANG/i.test(target)) return 'Ceramics';
-  if (/POWER|GAS|OIL|PETRO|ENERGY|GRID|ELECTRIC|TITAS|JAMUNA|PADMA|DESCO|UPGDCL|SUMMIT|MJL|KPCL|DORIN|BARAKA|SHAHJIBAZA|LINDE/i.test(target)) return 'Fuel & Power';
-  if (/STEEL|ISPAT|AUTO|CABLE|ENGINEER|METAL|PIPE|ALLOY|BSRM|GPH|WALTON|SINGER|KDS|AFTAB|RUNNER|COPPER|OIMEX|SAIF|RSRM|BBS|ANWAR|DESH|ECABLE/i.test(target)) return 'Engineering';
-  if (/FOOD|FEED|AGRO|BEV|ALLIED|SUGAR|SEA|POULTRY|GRAIN|BATBC|OLYMPIC|LOVELLO|EMERALD|FINE|AMCL|FUWANG|BEACH|RAHIMA|ZEAL/i.test(target)) return 'Food & Allied';
+  if (/CER|CERAMIC|\\bRAK\\b|RAKCERAMIC|\\bSHIN\\b|SHINECPA|MONNOCERA|FUWANG/i.test(target)) return 'Ceramic Sector';
+  if (/POWER|GAS|OIL|PETRO|ENERGY|GRID|ELECTRIC|TITAS|JAMUNAOIL|PADMA|DESCO|UPGDCL|SUMMIT|MJL|KPCL|DORIN|BARAKA|SHAHJIBAZA|LINDE/i.test(target)) return 'Fuel & Power';
+  if (/STEEL|ISPAT|AUTO|CABLE|ENGINEER|METAL|PIPE|ALLOY|BSRM|GPH|WALTON|SINGER|KDS|AFTAB|RUNNER|COPPER|OIMEX|SAIFPOWER|RSRM|BBS|ANWAR|DESH|ECABLE/i.test(target)) return 'Engineering';
+  if (/FOOD|FEED|AGRO|BEV|ALLIED|SUGAR|SEA|POULTRY|GRAIN|BATBC|OLYMPIC|LOVELLO|EMERALD|FINEFOODS|AMCLPRAN|FUWANGFOOD|BEACHHATCH|RAHIMA|ZEAL/i.test(target)) return 'Food & Allied';
   if (/IT|TEL|NET|TECH|SYS|INFO|CYBER|SOFTWARE|COMM|ADN|GENEX|AAMRA|BDCOM|AGNI|INTECH|E-GEN/i.test(target)) return 'IT Sector';
   if (/PAPER|PULP|PRINT|BOARD|HAKKANI|SONALI|BPPAPER/i.test(target)) return 'Paper & Printing';
   if (/LEATHER|TANRY|SHOE|FOOT|BATA|FORTUNE|SAMATA|APEX/i.test(target)) return 'Tannery Industries';
   if (/HOTEL|RESORT|TRAVEL|LEISURE|PEARL|PENINSULA|SEAPEARL/i.test(target)) return 'Travel & Leisure';
   if (/EHL|SAMORITA|EASTERN|REAL|SERVI/i.test(target)) return 'Services & Real Estate';
-  if (/TELE|ROBI|BSCCL|GRAMEEN/i.test(target)) return 'Telecommunication';
+  if (/\bGP\b|TELE|ROBI|BSCCL|GRAMEENPHONE/i.test(target)) return 'Telecommunication';
 
-  return 'Diversified / General Industry';
+  if (/BOND|DEBENTURE/i.test(target)) return 'Corporate Bond';
+  return 'Miscellaneous';
 }
 
 export function isSectorOrMarketIndex(symbol: string): boolean {
@@ -1399,7 +1404,7 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
       const parsed = JSON.parse(fileContent);
       const items = Array.isArray(parsed) ? parsed : [parsed];
       items.forEach((item) => {
-        if (item.symbol && Array.isArray(item.candles) && !isSectorOrMarketIndex(item.symbol)) {
+        if (item.symbol && Array.isArray(item.candles) ) {
           const candleMap = new Map<string, DseStockCandle>();
           item.candles.forEach((c: DseStockCandle) => {
             const normDate = normalizeDateString(c.date);
@@ -1549,9 +1554,7 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
       const sym = rawSym.toUpperCase().replace(/[^A-Z0-9_\-]/g, '');
 
       // Skip market/sector index summary lines from tradeable individual stock lists
-      if (isSectorOrMarketIndex(rawSym)) {
-        continue;
-      }
+      // sector parsing allowed
 
       const rawSector = sectorCol >= 0 && parts[sectorCol] ? parts[sectorCol].replace(/["']/g, '') : undefined;
       const rawName = nameCol >= 0 && parts[nameCol] ? parts[nameCol].replace(/["']/g, '') : undefined;
@@ -1733,7 +1736,7 @@ export function extractStockDataFromExtractedFiles(files: ExtractedFile[]): DseS
             (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
           );
 
-          const bestSector = inferDseSector(stock.symbol, stock.sector !== 'Diversified / General Industry' ? stock.sector : existing.sector, stock.name);
+          const bestSector = inferDseSector(stock.symbol, stock.sector !== 'Miscellaneous' ? stock.sector : existing.sector, stock.name);
 
           stockMap.set(stock.symbol, {
             ...stock,

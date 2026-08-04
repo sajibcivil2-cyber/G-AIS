@@ -144,7 +144,6 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
   onBack,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
 
   // Active Stock Symbol
   const [selectedSymbol, setSelectedSymbol] = useState<string>(() => {
@@ -274,14 +273,354 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
     return processedCandles.filter((c) => c.isVolumeBreakout).length;
   }, [processedCandles]);
 
-  // Draw Clean D3 Chart
+  // Calculate dynamic width based on number of candles to prevent horizontal compression!
+  const finalChartWidth = useMemo(() => {
+    const minBarWidth = 10;
+    const margin = { left: 55, right: 60 };
+    const requiredWidth = processedCandles.length * minBarWidth + margin.left + margin.right;
+    return Math.max(dimensions.width, requiredWidth);
+  }, [processedCandles.length, dimensions.width]);
+
+  // Auto-scroll to the latest data on the far right
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollLeft = containerRef.current.scrollWidth;
+    }
+  }, [processedCandles.length, timeframe]);
+
+  if (!currentStock) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400 font-mono text-sm">
+        No stock data found or pool is empty. Please select a different sector or upload a valid DSE dataset.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-2xl text-slate-200">
+      {/* Top Bar: Stock Selector & Fundamental Quick Summary */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex items-center gap-4">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="px-3 py-1.5 rounded-lg bg-slate-800/50 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              Back
+            </button>
+          )}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">
+              <BarChart2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-black text-white font-mono">{currentStock.symbol}</h2>
+                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono border border-slate-700">
+                  {currentStock.sector}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">{currentStock.name}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Stock Switcher */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-400 font-mono">Stock:</span>
+          <select
+            value={selectedSymbol}
+            onChange={(e) => setSelectedSymbol(e.target.value)}
+            className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold font-mono text-white focus:outline-none focus:border-emerald-500"
+          >
+            {stocks.map((st) => (
+              <option key={st.symbol} value={st.symbol}>
+                {st.symbol} — {st.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Chart Control Toolbar: Range Selector & Pattern Marker Filtering */}
+      <div className="flex flex-col gap-3 bg-slate-950/90 p-3 rounded-xl border border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Timeframe Range Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-mono font-bold flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-emerald-400" /> Range:
+            </span>
+            <div className="flex items-center gap-1">
+              {(['1M', '3M', '6M', '1Y', 'ALL'] as const).map((tf) => (
+                <button
+                  key={tf}
+                  onClick={() => setTimeframe(tf)}
+                  className={`px-3 py-1 rounded-lg text-xs font-extrabold font-mono transition-all ${
+                    timeframe === tf
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 scale-105'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+            {processedCandles.length > 0 && (
+              <span className="hidden md:inline-block text-[11px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-1 rounded-md border border-slate-800">
+                {timeframe === '1M' && '1 Month (22 Trading Days)'}
+                {timeframe === '3M' && '3 Months (65 Trading Days)'}
+                {timeframe === '6M' && '6 Months (130 Trading Days)'}
+                {timeframe === '1Y' && '1 Year (250 Trading Days)'}
+                {timeframe === 'ALL' && 'Full Historical Data'}
+                {' • '}
+                <span className="text-emerald-400 font-bold">
+                  {processedCandles[0]?.date} ➔ {processedCandles[processedCandles.length - 1]?.date}
+                </span>
+              </span>
+            )}
+          </div>
+
+          {/* Indicator & Subpanel Toggles */}
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+            {/* Chart Mode */}
+            <button
+              onClick={() => setChartType(chartType === 'candlestick' ? 'area' : 'candlestick')}
+              className={`px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
+                chartType === 'candlestick' ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>{chartType === 'candlestick' ? 'Candles' : 'Area Line'}</span>
+            </button>
+
+            {/* Bollinger Bands */}
+            <button
+              onClick={() => setShowBBands(!showBBands)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showBBands ? 'bg-sky-950/80 text-sky-300 border-sky-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              BBands
+            </button>
+
+            {/* Volume */}
+            <button
+              onClick={() => setShowVolume(!showVolume)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showVolume ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              Volume
+            </button>
+
+            {/* RSI */}
+            <button
+              onClick={() => setShowRsi(!showRsi)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showRsi ? 'bg-amber-950/80 text-amber-300 border-amber-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              RSI (14)
+            </button>
+
+            {/* OBV */}
+            <button
+              onClick={() => setShowObv(!showObv)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showObv ? 'bg-purple-950/80 text-purple-300 border-purple-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              OBV
+            </button>
+
+            {/* Harmonics */}
+            <button
+              onClick={() => setShowHarmonics(!showHarmonics)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showHarmonics ? 'bg-rose-950/80 text-rose-300 border-rose-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              Harmonics (Bullish W)
+            </button>
+
+            {/* Fib Levels */}
+            <button
+              onClick={() => setShowFibLevels(!showFibLevels)}
+              className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                showFibLevels ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              Fib Levels
+            </button>
+          </div>
+        </div>
+
+        {/* Pattern Marker Control Bar (Hide/Show & Filter Individual Patterns) */}
+        <div className="pt-2 border-t border-slate-900 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Master Toggle */}
+            <button
+              onClick={() => setShowSignals(!showSignals)}
+              className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-colors ${
+                showSignals
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/50'
+                  : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Pattern Markers: {showSignals ? 'ON' : 'OFF'}</span>
+            </button>
+
+            {showSignals && (
+              <>
+                {/* Specific Pattern Chips */}
+                <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+                  {[
+                    { id: 'ALL', label: 'All Markers', icon: '✨' },
+                    { id: 'Bullish Flag', label: 'Flag', icon: '🚩' },
+                    { id: 'Double Bottom', label: 'W-Bottom', icon: 'Ⓦ' },
+                    { id: 'Cup & Handle', label: 'Cup', icon: '🍵' },
+                    { id: 'Ascending Triangle', label: 'Triangle', icon: '🔺' },
+                    { id: 'VCP Compression', label: 'VCP Coil', icon: '⚡' },
+                    { id: 'Harmonic Pattern (C-to-D)', label: 'Harmonic C-to-D', icon: '💎' },
+                    { id: 'Volume Surge', label: 'Vol Surge', icon: '⚡' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPatternFilter(p.id)}
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition-all flex items-center gap-1 ${
+                        selectedPatternFilter === p.id
+                          ? 'bg-indigo-600 text-white shadow border border-indigo-400'
+                          : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                      }`}
+                    >
+                      <span>{p.icon}</span>
+                      <span>{p.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Scope Switcher: Recent 7 Days vs Full Timeframe */}
+                <button
+                  onClick={() => setShowAllWindowMarkers(!showAllWindowMarkers)}
+                  className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                    showAllWindowMarkers
+                      ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40 font-bold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                  title="Toggle between showing markers for recent 7 days only vs entire selected timeframe window"
+                >
+                  Scope: {showAllWindowMarkers ? `Full ${timeframe} Window` : 'Recent 7 Days'}
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="text-[11px] text-slate-500">
+            {totalStockBreakouts} breakout signal{totalStockBreakouts === 1 ? '' : 's'} identified in active {timeframe} window
+          </div>
+        </div>
+      </div>
+
+      {/* Hover Info Header Readout */}
+      <div className="min-h-[28px] bg-slate-950 p-2 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs font-mono">
+        {hoveredData ? (
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="text-slate-400">Date: <strong className="text-white">{hoveredData.date}</strong></span>
+            <span className="text-slate-400">O: <strong className="text-white">৳{hoveredData.open}</strong></span>
+            <span className="text-slate-400">H: <strong className="text-white">৳{hoveredData.high}</strong></span>
+            <span className="text-slate-400">L: <strong className="text-white">৳{hoveredData.low}</strong></span>
+            <span className="text-slate-400">C: <strong className={hoveredData.close >= hoveredData.open ? 'text-emerald-400' : 'text-rose-400'}>৳{hoveredData.close}</strong></span>
+            <span className="text-slate-400">Vol: <strong className="text-white">{hoveredData.volume.toLocaleString()}</strong></span>
+            {hoveredData.rsi !== null && (
+              <span className="text-slate-400">RSI: <strong className="text-amber-400">{hoveredData.rsi}</strong></span>
+            )}
+          </div>
+        ) : (
+          <div className="text-slate-500 text-[11px]">
+            Hover over candlesticks to inspect price action, volume, RSI & OBV values.
+          </div>
+        )}
+      </div>
+
+      {/* Main D3 SVG Container */}
+      <div ref={containerRef} className="w-full relative min-h-[580px] bg-slate-950 rounded-xl border border-slate-800/80 p-2 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent shadow-inner">
+        <D3ChartCanvas
+          processedCandles={processedCandles}
+          allProcessedCandles={allProcessedCandles}
+          chartType={chartType}
+          showBBands={showBBands}
+          showVolume={showVolume}
+          showRsi={showRsi}
+          showObv={showObv}
+          showSignals={showSignals}
+          selectedPatternFilter={selectedPatternFilter}
+          showAllWindowMarkers={showAllWindowMarkers}
+          showHarmonics={showHarmonics}
+          showFibLevels={showFibLevels}
+          dimensions={dimensions}
+          onSelectSignal={onSelectSignal}
+          setHoveredData={setHoveredData}
+          currentStock={currentStock}
+          timeframe={timeframe}
+          finalChartWidth={finalChartWidth}
+        />
+      </div>
+    </div>
+  );
+};
+
+interface D3ChartCanvasProps {
+  processedCandles: ProcessedCandle[];
+  allProcessedCandles: ProcessedCandle[];
+  chartType: 'candlestick' | 'area';
+  showBBands: boolean;
+  showVolume: boolean;
+  showRsi: boolean;
+  showObv: boolean;
+  showSignals: boolean;
+  selectedPatternFilter: string;
+  showAllWindowMarkers: boolean;
+  showHarmonics: boolean;
+  showFibLevels: boolean;
+  dimensions: { width: number; height: number };
+  onSelectSignal?: (signal: BreakoutSignal) => void;
+  setHoveredData: (data: ProcessedCandle | null) => void;
+  currentStock: DseStockData;
+  timeframe: string;
+  finalChartWidth: number;
+}
+
+const D3ChartCanvas: React.FC<D3ChartCanvasProps> = React.memo(({
+  processedCandles,
+  allProcessedCandles,
+  chartType,
+  showBBands,
+  showVolume,
+  showRsi,
+  showObv,
+  showSignals,
+  selectedPatternFilter,
+  showAllWindowMarkers,
+  showHarmonics,
+  showFibLevels,
+  dimensions,
+  onSelectSignal,
+  setHoveredData,
+  currentStock,
+  timeframe,
+  finalChartWidth,
+}) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+
   useEffect(() => {
     if (!svgRef.current || processedCandles.length === 0) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
-    const width = dimensions.width;
+    const width = finalChartWidth; // Use finalChartWidth for drawing to prevent compression!
     const height = dimensions.height;
     const margin = { top: 25, right: 60, bottom: 30, left: 55 };
 
@@ -309,7 +648,7 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
 
     const obvTop = showObv ? currentYOffset : 0;
 
-    svg.attr('viewBox', `0 0 ${width} ${height}`).attr('width', '100%').attr('height', height);
+    svg.attr('viewBox', `0 0 ${width} ${height}`).attr('width', width).attr('height', height);
 
     const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
@@ -899,266 +1238,7 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
     dimensions.height,
   ]);
 
-  if (!currentStock) {
-    return (
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400 font-mono text-sm">
-        No stock data found or pool is empty. Please select a different sector or upload a valid DSE dataset.
-      </div>
-    );
-  }
+  return <svg ref={svgRef} className="h-full overflow-visible" style={{ width: finalChartWidth }} />;
+});
 
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-2xl text-slate-200">
-      {/* Top Bar: Stock Selector & Fundamental Quick Summary */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div className="flex items-center gap-4">
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="px-3 py-1.5 rounded-lg bg-slate-800/50 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-              Back
-            </button>
-          )}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">
-              <BarChart2 className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-white font-mono">{currentStock.symbol}</h2>
-                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono border border-slate-700">
-                  {currentStock.sector}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">{currentStock.name}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Stock Switcher */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400 font-mono">Stock:</span>
-          <select
-            value={selectedSymbol}
-            onChange={(e) => setSelectedSymbol(e.target.value)}
-            className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold font-mono text-white focus:outline-none focus:border-emerald-500"
-          >
-            {stocks.map((st) => (
-              <option key={st.symbol} value={st.symbol}>
-                {st.symbol} — {st.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Chart Control Toolbar: Range Selector & Pattern Marker Filtering */}
-      <div className="flex flex-col gap-3 bg-slate-950/90 p-3 rounded-xl border border-slate-800">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Timeframe Range Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 font-mono font-bold flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-emerald-400" /> Range:
-            </span>
-            <div className="flex items-center gap-1">
-              {(['1M', '3M', '6M', '1Y', 'ALL'] as const).map((tf) => (
-                <button
-                  key={tf}
-                  onClick={() => setTimeframe(tf)}
-                  className={`px-3 py-1 rounded-lg text-xs font-extrabold font-mono transition-all ${
-                    timeframe === tf
-                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 scale-105'
-                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-                  }`}
-                >
-                  {tf}
-                </button>
-              ))}
-            </div>
-            {processedCandles.length > 0 && (
-              <span className="hidden md:inline-block text-[11px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-1 rounded-md border border-slate-800">
-                {timeframe === '1M' && '1 Month (22 Trading Days)'}
-                {timeframe === '3M' && '3 Months (65 Trading Days)'}
-                {timeframe === '6M' && '6 Months (130 Trading Days)'}
-                {timeframe === '1Y' && '1 Year (250 Trading Days)'}
-                {timeframe === 'ALL' && 'Full Historical Data'}
-                {' • '}
-                <span className="text-emerald-400 font-bold">
-                  {processedCandles[0]?.date} ➔ {processedCandles[processedCandles.length - 1]?.date}
-                </span>
-              </span>
-            )}
-          </div>
-
-          {/* Indicator & Subpanel Toggles */}
-          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-            {/* Chart Mode */}
-            <button
-              onClick={() => setChartType(chartType === 'candlestick' ? 'area' : 'candlestick')}
-              className={`px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
-                chartType === 'candlestick' ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5" />
-              <span>{chartType === 'candlestick' ? 'Candles' : 'Area Line'}</span>
-            </button>
-
-            {/* Bollinger Bands */}
-            <button
-              onClick={() => setShowBBands(!showBBands)}
-              className={`px-2.5 py-1 rounded-lg border transition-colors ${
-                showBBands ? 'bg-sky-950/80 text-sky-300 border-sky-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              BBands
-            </button>
-
-            {/* Volume */}
-            <button
-              onClick={() => setShowVolume(!showVolume)}
-              className={`px-2.5 py-1 rounded-lg border transition-colors ${
-                showVolume ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              Volume
-            </button>
-
-            {/* RSI */}
-            <button
-              onClick={() => setShowRsi(!showRsi)}
-              className={`px-2.5 py-1 rounded-lg border transition-colors ${
-                showRsi ? 'bg-amber-950/80 text-amber-300 border-amber-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              RSI (14)
-            </button>
-
-            {/* OBV */}
-            <button
-              onClick={() => setShowObv(!showObv)}
-              className={`px-2.5 py-1 rounded-lg border transition-colors ${
-                showObv ? 'bg-purple-950/80 text-purple-300 border-purple-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              OBV
-            </button>
-
-            {/* Harmonics */}
-            <button
-              onClick={() => setShowHarmonics(!showHarmonics)}
-              className={`px-2.5 py-1 rounded-lg border transition-colors ${
-                showHarmonics ? 'bg-rose-950/80 text-rose-300 border-rose-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              Harmonics (Bullish W)
-            </button>
-
-            {/* Fib Levels */}
-            <button
-              onClick={() => setShowFibLevels(!showFibLevels)}
-              className={`px-2.5 py-1 rounded-lg border transition-colors ${
-                showFibLevels ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              Fib Levels
-            </button>
-          </div>
-        </div>
-
-        {/* Pattern Marker Control Bar (Hide/Show & Filter Individual Patterns) */}
-        <div className="pt-2 border-t border-slate-900 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Master Toggle */}
-            <button
-              onClick={() => setShowSignals(!showSignals)}
-              className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-colors ${
-                showSignals
-                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/50'
-                  : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Pattern Markers: {showSignals ? 'ON' : 'OFF'}</span>
-            </button>
-
-            {showSignals && (
-              <>
-                {/* Specific Pattern Chips */}
-                <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-                  {[
-                    { id: 'ALL', label: 'All Markers', icon: '✨' },
-                    { id: 'Bullish Flag', label: 'Flag', icon: '🚩' },
-                    { id: 'Double Bottom', label: 'W-Bottom', icon: 'Ⓦ' },
-                    { id: 'Cup & Handle', label: 'Cup', icon: '🍵' },
-                    { id: 'Ascending Triangle', label: 'Triangle', icon: '🔺' },
-                    { id: 'VCP Compression', label: 'VCP Coil', icon: '⚡' },
-                    { id: 'Harmonic Pattern (C-to-D)', label: 'Harmonic C-to-D', icon: '💎' },
-                    { id: 'Volume Surge', label: 'Vol Surge', icon: '⚡' },
-                  ].map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => setSelectedPatternFilter(p.id)}
-                      className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition-all flex items-center gap-1 ${
-                        selectedPatternFilter === p.id
-                          ? 'bg-indigo-600 text-white shadow border border-indigo-400'
-                          : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
-                      }`}
-                    >
-                      <span>{p.icon}</span>
-                      <span>{p.label}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Scope Switcher: Recent 7 Days vs Full Timeframe */}
-                <button
-                  onClick={() => setShowAllWindowMarkers(!showAllWindowMarkers)}
-                  className={`px-2.5 py-1 rounded-lg border transition-colors ${
-                    showAllWindowMarkers
-                      ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40 font-bold'
-                      : 'bg-slate-900 text-slate-400 border-slate-800'
-                  }`}
-                  title="Toggle between showing markers for recent 7 days only vs entire selected timeframe window"
-                >
-                  Scope: {showAllWindowMarkers ? `Full ${timeframe} Window` : 'Recent 7 Days'}
-                </button>
-              </>
-            )}
-          </div>
-
-          <div className="text-[11px] text-slate-500">
-            {totalStockBreakouts} breakout signal{totalStockBreakouts === 1 ? '' : 's'} identified in active {timeframe} window
-          </div>
-        </div>
-      </div>
-
-      {/* Hover Info Header Readout */}
-      <div className="min-h-[28px] bg-slate-950 p-2 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs font-mono">
-        {hoveredData ? (
-          <div className="flex items-center gap-4 flex-wrap">
-            <span className="text-slate-400">Date: <strong className="text-white">{hoveredData.date}</strong></span>
-            <span className="text-slate-400">O: <strong className="text-white">৳{hoveredData.open}</strong></span>
-            <span className="text-slate-400">H: <strong className="text-white">৳{hoveredData.high}</strong></span>
-            <span className="text-slate-400">L: <strong className="text-white">৳{hoveredData.low}</strong></span>
-            <span className="text-slate-400">C: <strong className={hoveredData.close >= hoveredData.open ? 'text-emerald-400' : 'text-rose-400'}>৳{hoveredData.close}</strong></span>
-            <span className="text-slate-400">Vol: <strong className="text-white">{hoveredData.volume.toLocaleString()}</strong></span>
-            {hoveredData.rsi !== null && (
-              <span className="text-slate-400">RSI: <strong className="text-amber-400">{hoveredData.rsi}</strong></span>
-            )}
-          </div>
-        ) : (
-          <div className="text-slate-500 text-[11px]">
-            Hover over candlesticks to inspect price action, volume, RSI & OBV values.
-          </div>
-        )}
-      </div>
-
-      {/* Main D3 SVG Container */}
-      <div ref={containerRef} className="w-full relative min-h-[580px] bg-slate-950 rounded-xl border border-slate-800/80 p-2 overflow-hidden shadow-inner">
-        <svg ref={svgRef} className="w-full h-full overflow-visible" />
-      </div>
-    </div>
-  );
-};
+D3ChartCanvas.displayName = 'D3ChartCanvas';

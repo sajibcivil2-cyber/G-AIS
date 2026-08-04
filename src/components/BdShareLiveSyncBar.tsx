@@ -38,8 +38,9 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
   const [syncNotice, setSyncNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [autoSync, setAutoSync] = useState<boolean>(true);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
-  
+
   const hasAttemptedAutoSync = useRef(false);
+  const isSyncInFlight = useRef(false);
 
   // Recalculate freshness when stocks prop changes
   useEffect(() => {
@@ -91,8 +92,13 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
     }
   };
 
-  // Handle manual live sync click
+  // Handle manual live sync click. Guarded against concurrent/duplicate invocations
+  // (e.g. a user double-clicking "Sync Now" while auto-sync is already running), since
+  // overlapping syncs writing to the same stock pool was one source of data corruption.
   const handleSyncNow = async () => {
+    if (isSyncInFlight.current) return;
+    isSyncInFlight.current = true;
+
     try {
       setIsSyncing(true);
       setSyncNotice(null);
@@ -103,16 +109,20 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
         onStocksUpdated(result.updatedStocks);
         const newFresh = getDatasetFreshness(result.updatedStocks);
         setFreshness(newFresh);
-        
+
         // Auto-save database to storage after live sync
         await saveDatabaseToStorage(result.updatedStocks);
         setLastSaved(getLastSavedTimestamp());
 
+        const rejectedSuffix = result.rejectedCandlesCount > 0
+          ? ` ${result.rejectedCandlesCount} candle(s) were rejected as implausible price data and skipped.`
+          : '';
+
         setSyncNotice({
           type: 'success',
           message: result.addedCandlesCount > 0
-            ? `Synced ${result.missingDates.length} missing trading days! Appended ${result.addedCandlesCount} candles up to ${newFresh.lastAvailableDate} and saved database.`
-            : 'BD Share market dataset is already fully up to date and saved in database.',
+            ? `Synced ${result.missingDates.length} missing trading days! Appended ${result.addedCandlesCount} candles up to ${newFresh.lastAvailableDate} and saved database.${rejectedSuffix}`
+            : `BD Share market dataset is already fully up to date and saved in database.${rejectedSuffix}`,
         });
       }
     } catch (err: any) {
@@ -123,6 +133,7 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
       });
     } finally {
       setIsSyncing(false);
+      isSyncInFlight.current = false;
     }
   };
 
@@ -299,7 +310,7 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
 
             <div className="space-y-3 text-xs text-slate-300 font-mono leading-relaxed">
               <p>
-                The live market engine checks historical stock datasets against current Dhaka Stock Exchange (DSE) trading days. Any missing daily trading sessions between the last available candle and today are fetched and appended seamlessly.
+                The live market engine checks historical stock datasets against current Dhaka Stock Exchange (DSE) trading days. Any missing daily trading sessions between the last available candle and today are fetched and appended seamlessly. Every synced candle is validated against the stock's last known-good price before being accepted — implausible jumps are rejected rather than stored.
               </p>
 
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">

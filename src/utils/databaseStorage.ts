@@ -1,4 +1,4 @@
-import { DseStockData } from '../types';
+import { DseStockData, DseStockCandle } from '../types';
 
 const DB_NAME = 'DSE_STOCK_DATABASE_DB';
 const STORE_NAME = 'stock_datasets';
@@ -6,7 +6,129 @@ const DB_VERSION = 1;
 const LOCALSTORAGE_KEY = 'DSE_STOCK_DATABASE_JSON';
 const TIMESTAMP_KEY = 'DSE_STOCK_DATABASE_TIMESTAMP';
 
-// Initialize IndexedDB
+// Maximum plausible single-day close-to-close move before a candle is treated as corrupted.
+// DSE has a 10% circuit breaker in real trading; we allow generous headroom (60%) to avoid
+// false positives from legitimate gap-up/gap-down days, while still catching data corruption
+// (e.g. a sync bug that multiplies/duplicates a price, decimal shifts, stale merges, etc.)
+const MAX_PLAUSIBLE_DAILY_MOVE_PCT = 60;
+
+// ---------------------------------------------------------------------------
+// Validation & repair helpers
+// ---------------------------------------------------------------------------
+
+function isFiniteQuietPositive(n: unknown): n is number {
+  return typeof n === 'number' && isFinite(n) && n > 0;
+}
+
+function isCandleStructurallyValid(c: DseStockCandle): boolean {
+  if (!c || !c.date) return false;
+  if (!isFiniteQuietPositive(c.open) || !isFiniteQuietPositive(c.high) ||
+      !isFiniteQuietPositive(c.low) || !isFiniteQuietPositive(c.close)) {
+    return false;
+  }
+  if (typeof c.volume !== 'number' || !isFinite(c.volume) || c.volume < 0) return false;
+  // High must be the max and low must be the min of the bar
+  const maxOC = Math.max(c.open, c.close);
+  const minOC = Math.min(c.open, c.close);
+  if (c.high < maxOC * 0.999) return false; // small epsilon for rounding
+  if (c.low > minOC * 1.001) return false;
+  return true;
+}
+
+/**
+ * Validates and repairs a single stock's candle series.
+ * - Drops structurally invalid candles (negative/zero/NaN prices, broken OHLC relationships).
+ * - Sorts & deduplicates by date.
+ * - Scans chronologically and drops any candle that represents an implausible single-day
+ *   price jump relative to the last known-good candle (data corruption / bad sync), rather
+ *   than discarding the entire stock or the entire database.
+ *
+ * Returns the repaired stock and whether any repair was necessary.
+ */
+export function validateAndRepairStock(stock: DseStockData): { stock: DseStockData; wasRepaired: boolean } {
+  if (!stock || !Array.isArray(stock.candles) || stock.candles.length === 0) {
+    return { stock, wasRepaired: false };
+  }
+
+  let wasRepaired = false;
+
+  // 1. Drop structurally invalid candles
+  const structurallyValid = stock.candles.filter((c) => {
+    const ok = isCandleStructurallyValid(c);
+    if (!ok) wasRepaired = true;
+    return ok;
+  });
+
+  // 2. Dedupe by date (keep last occurrence) & sort chronologically
+  const byDate = new Map<string, DseStockCandle>();
+  structurallyValid.forEach((c) => {
+    if (byDate.has(c.date)) wasRepaired = true;
+    byDate.set(c.date, c);
+  });
+  const sorted = Array.from(byDate.values()).sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  // 3. Walk chronologically, dropping candles with implausible jumps vs. last good candle.
+  //    This repairs corruption locally instead of nuking the whole series.
+  const repaired: DseStockCandle[] = [];
+  let lastGoodClose: number | null = null;
+
+  for (const c of sorted) {
+    if (lastGoodClose !== null) {
+      const movePct = Math.abs((c.close - lastGoodClose) / lastGoodClose) * 100;
+      if (movePct > MAX_PLAUSIBLE_DAILY_MOVE_PCT) {
+        // Suspicious candle — drop it, keep scanning against the last known-good price
+        // rather than aborting the whole series.
+        wasRepaired = true;
+        continue;
+      }
+    }
+    repaired.push(c);
+    lastGoodClose = c.close;
+  }
+
+  if (!wasRepaired) {
+    return { stock, wasRepaired: false };
+  }
+
+  return {
+    stock: { ...stock, candles: repaired },
+    wasRepaired: true,
+  };
+}
+
+/**
+ * Validates an entire stock pool, repairing or dropping individual stocks as needed.
+ * A stock is only dropped entirely if it has zero valid candles after repair — otherwise
+ * we keep its cleaned data. Returns the cleaned pool and a summary for diagnostics.
+ */
+export function validateAndRepairDatabase(stocks: DseStockData[]): {
+  stocks: DseStockData[];
+  repairedSymbols: string[];
+  droppedSymbols: string[];
+} {
+  const repairedSymbols: string[] = [];
+  const droppedSymbols: string[] = [];
+  const cleaned: DseStockData[] = [];
+
+  for (const s of stocks) {
+    const { stock, wasRepaired } = validateAndRepairStock(s);
+    if (!stock.candles || stock.candles.length === 0) {
+      droppedSymbols.push(s.symbol);
+      continue;
+    }
+    if (wasRepaired) repairedSymbols.push(s.symbol);
+    cleaned.push(stock);
+  }
+
+  return { stocks: cleaned, repairedSymbols, droppedSymbols };
+}
+
+// ---------------------------------------------------------------------------
+// IndexedDB plumbing
+// ---------------------------------------------------------------------------
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (!window.indexedDB) {
@@ -25,17 +147,19 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-// Save stock dataset to IndexedDB & localStorage fallback
+// Save stock dataset to IndexedDB & localStorage fallback.
+// Validates/repairs data before persisting so corruption never gets written to disk.
 export async function saveDatabaseToStorage(stocks: DseStockData[]): Promise<{ success: boolean; message: string }> {
   try {
     const timestamp = new Date().toLocaleString();
-    
+    const { stocks: cleanStocks, repairedSymbols, droppedSymbols } = validateAndRepairDatabase(stocks);
+
     // Save to IndexedDB
     try {
       const db = await openDB();
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      
+
       // Clear existing records first
       await new Promise<void>((resolve, reject) => {
         const clearReq = store.clear();
@@ -44,7 +168,7 @@ export async function saveDatabaseToStorage(stocks: DseStockData[]): Promise<{ s
       });
 
       // Put all stock objects
-      for (const stock of stocks) {
+      for (const stock of cleanStocks) {
         store.put(stock);
       }
 
@@ -54,16 +178,21 @@ export async function saveDatabaseToStorage(stocks: DseStockData[]): Promise<{ s
       });
     } catch (idbErr) {
       console.warn('IndexedDB save warning, attempting localStorage fallback:', idbErr);
-      localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(stocks));
+      localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(cleanStocks));
     }
 
     localStorage.setItem(TIMESTAMP_KEY, timestamp);
-    const totalCandles = stocks.reduce((acc, s) => acc + (s.candles?.length || 0), 0);
+    const totalCandles = cleanStocks.reduce((acc, s) => acc + (s.candles?.length || 0), 0);
 
-    return {
-      success: true,
-      message: `Database saved successfully! ${stocks.length} stocks (${totalCandles} candles) stored locally at ${timestamp}.`,
-    };
+    let message = `Database saved successfully! ${cleanStocks.length} stocks (${totalCandles} candles) stored locally at ${timestamp}.`;
+    if (repairedSymbols.length > 0) {
+      message += ` Repaired corrupted price data for: ${repairedSymbols.join(', ')}.`;
+    }
+    if (droppedSymbols.length > 0) {
+      message += ` Dropped unrecoverable stocks: ${droppedSymbols.join(', ')}.`;
+    }
+
+    return { success: true, message };
   } catch (err: any) {
     console.error('Failed to save database:', err);
     return {
@@ -73,7 +202,8 @@ export async function saveDatabaseToStorage(stocks: DseStockData[]): Promise<{ s
   }
 }
 
-// Load stock dataset from IndexedDB & localStorage fallback
+// Load stock dataset from IndexedDB & localStorage fallback.
+// Corrupted candles/stocks are repaired in place instead of wiping the entire cache.
 export async function loadDatabaseFromStorage(): Promise<DseStockData[] | null> {
   try {
     // Try loading from IndexedDB
@@ -89,25 +219,37 @@ export async function loadDatabaseFromStorage(): Promise<DseStockData[] | null> 
       });
 
       if (allStocks && allStocks.length > 0) {
-        // Enforce data cleanup for corrupted prices (e.g., from legacy parseFloat comma bug where RENATA/GP/BATBC fell to ~1 BDT)
-        const highValueSymbols = new Set(['GP', 'RENATA', 'BATBC', 'SQURPHARMA', 'BEXIMCO', 'LHBL', 'OLYMPIC', 'WALTON', 'MARICO']);
-        const hasCorruptedPrice = allStocks.some((s) => {
-          if (!s.candles || s.candles.length === 0) return true;
-          const lastClose = s.candles[s.candles.length - 1].close;
-          if (isNaN(lastClose) || lastClose <= 0) return true;
-          if (highValueSymbols.has(s.symbol) && lastClose < 10) return true;
-          return false;
-        });
+        const { stocks: cleanStocks, repairedSymbols, droppedSymbols } = validateAndRepairDatabase(allStocks);
 
-        if (hasCorruptedPrice) {
-          console.warn('Detected corrupted price data in stock database. Clearing cache to reset to clean defaults...');
-          const clearTx = db.transaction(STORE_NAME, 'readwrite');
-          clearTx.objectStore(STORE_NAME).clear();
-          localStorage.removeItem(LOCALSTORAGE_KEY);
-          return null;
+        if (repairedSymbols.length > 0 || droppedSymbols.length > 0) {
+          console.warn(
+            `Stock database repaired on load. Fixed: [${repairedSymbols.join(', ') || 'none'}]. ` +
+            `Dropped (unrecoverable): [${droppedSymbols.join(', ') || 'none'}].`
+          );
+          // Persist the repaired version immediately so the fix sticks and we don't
+          // re-detect/re-log the same corruption on every future load.
+          try {
+            const writeTx = db.transaction(STORE_NAME, 'readwrite');
+            const writeStore = writeTx.objectStore(STORE_NAME);
+            await new Promise<void>((resolve, reject) => {
+              const clearReq = writeStore.clear();
+              clearReq.onsuccess = () => resolve();
+              clearReq.onerror = () => reject(clearReq.error);
+            });
+            cleanStocks.forEach((s) => writeStore.put(s));
+            await new Promise<void>((resolve, reject) => {
+              writeTx.oncomplete = () => resolve();
+              writeTx.onerror = () => reject(writeTx.error);
+            });
+          } catch (persistErr) {
+            console.warn('Could not persist repaired database:', persistErr);
+          }
         }
 
-        return allStocks;
+        if (cleanStocks.length > 0) {
+          return cleanStocks;
+        }
+        // Every stock was unrecoverable — fall through to localStorage/defaults.
       }
     } catch (idbErr) {
       console.warn('IndexedDB load warning, falling back to localStorage:', idbErr);
@@ -118,7 +260,10 @@ export async function loadDatabaseFromStorage(): Promise<DseStockData[] | null> 
     if (jsonStr) {
       const parsed = JSON.parse(jsonStr);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed as DseStockData[];
+        const { stocks: cleanStocks } = validateAndRepairDatabase(parsed as DseStockData[]);
+        if (cleanStocks.length > 0) {
+          return cleanStocks;
+        }
       }
     }
 
@@ -138,7 +283,7 @@ export function getLastSavedTimestamp(): string | null {
 export async function clearDatabaseStorage(): Promise<void> {
   localStorage.removeItem(LOCALSTORAGE_KEY);
   localStorage.removeItem(TIMESTAMP_KEY);
-  
+
   if (window.indexedDB) {
     try {
       const db = await openDB();
@@ -161,7 +306,7 @@ export function exportDatabaseToFile(stocks: DseStockData[], fileName = 'dse_sto
     const dataStr = JSON.stringify(stocks, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    
+
     const dateStr = new Date().toISOString().split('T')[0];
     const finalFileName = fileName.endsWith('.json')
       ? fileName.replace('.json', `_${dateStr}.json`)
