@@ -113,6 +113,20 @@ export const PatternScanNotifier: React.FC<PatternScanNotifierProps> = ({
         return { icon: '🔺', label: 'Ascending Triangle', color: 'text-sky-300 bg-sky-500/20 border-sky-500/40' };
       case 'VCP Compression':
         return { icon: '⚡', label: 'VCP Volatility Coil', color: 'text-purple-300 bg-purple-500/20 border-purple-500/40' };
+      case 'Harmonic Pattern (C-to-D)':
+        return { icon: '🦋', label: 'Harmonic C-to-D', color: 'text-rose-400 bg-rose-500/20 border-rose-500/40' };
+      case 'Inverse Head & Shoulders':
+        return { icon: '👤', label: 'Inverse Head & Shoulders', color: 'text-fuchsia-400 bg-fuchsia-500/20 border-fuchsia-500/40' };
+      case 'Falling Wedge Breakout':
+        return { icon: '📉', label: 'Falling Wedge Breakout', color: 'text-orange-400 bg-orange-500/20 border-orange-500/40' };
+      case 'Rounding Bottom':
+        return { icon: '🥣', label: 'Rounding Bottom', color: 'text-teal-300 bg-teal-500/20 border-teal-500/40' };
+      case 'MA 10/20/30 Crossover':
+        return { icon: '📈', label: 'MA 10/20/30 Crossover', color: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/40' };
+      case 'Bullish Pennant':
+        return { icon: '🎏', label: 'Bullish Pennant', color: 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40' };
+      case 'Symmetrical Triangle':
+        return { icon: '▶️', label: 'Symmetrical Triangle', color: 'text-blue-300 bg-blue-500/20 border-blue-500/40' };
       default:
         return { icon: '📦', label: 'Box Consolidation', color: 'text-slate-300 bg-slate-800 border-slate-700' };
     }

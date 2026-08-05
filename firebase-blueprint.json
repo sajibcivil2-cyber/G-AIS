@@ -1,0 +1,134 @@
+{
+  "entities": {
+    "UserSavedWatchlist": {
+      "title": "User Saved Watchlist",
+      "description": "User saved DSE stock symbols and custom notes",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user ID"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Stock trading symbol",
+          "maxLength": 30
+        },
+        "notes": {
+          "type": "string",
+          "description": "Custom trading notes",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "symbol", "createdAt"]
+    },
+    "BacktestReport": {
+      "title": "Backtest Report",
+      "description": "Saved DSE backtest strategy report",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user ID"
+        },
+        "strategyName": {
+          "type": "string",
+          "description": "Strategy name",
+          "maxLength": 100
+        },
+        "totalTrades": {
+          "type": "number"
+        },
+        "winRate": {
+          "type": "number"
+        },
+        "profitFactor": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "strategyName", "createdAt"]
+    },
+    "PriceAlert": {
+      "title": "Price Alert",
+      "description": "Target price alert for a DSE stock symbol",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "targetPrice": {
+          "type": "number"
+        },
+        "condition": {
+          "type": "string",
+          "enum": ["ABOVE", "BELOW"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "symbol", "targetPrice", "condition", "createdAt"]
+    },
+    "UserPreference": {
+      "title": "User Preference",
+      "description": "User custom default backtest & screener parameters",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "initialCapital": {
+          "type": "number"
+        },
+        "positionSizePct": {
+          "type": "number"
+        },
+        "maxRiskPerTradePct": {
+          "type": "number"
+        },
+        "stopLossPct": {
+          "type": "number"
+        },
+        "targetProfitPct": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/watchlists/{watchlistId}": {
+      "schema": { "$ref": "#/entities/UserSavedWatchlist" },
+      "description": "User custom saved watchlists"
+    },
+    "/users/{userId}/backtests/{backtestId}": {
+      "schema": { "$ref": "#/entities/BacktestReport" },
+      "description": "User saved backtest strategy reports"
+    },
+    "/users/{userId}/alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/PriceAlert" },
+      "description": "User set stock price alerts"
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/UserPreference" },
+      "description": "User default settings and preferences"
+    }
+  }
+}

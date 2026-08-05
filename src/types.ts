@@ -130,7 +130,35 @@ export type TechnicalPatternType =
   | 'Ascending Triangle'
   | 'VCP Compression'
   | 'Harmonic Pattern (C-to-D)'
-  | 'Box Range Consolidation';
+  | 'Box Range Consolidation'
+  | 'Inverse Head & Shoulders'
+  | 'Falling Wedge Breakout'
+  | 'Rounding Bottom'
+  | 'MA 10/20/30 Crossover'
+  | 'Bullish Pennant'
+  | 'Symmetrical Triangle';
+
+export interface EdgeStat {
+  count: number;
+  wins: number;
+  winRate: number;
+  avgReturn: number;
+}
+
+export interface StockEdgeStat extends EdgeStat {
+  symbol: string;
+}
+
+export interface SectorEdgeStat extends EdgeStat {
+  sector: string;
+  stocks: string[];
+}
+
+export interface PatternEdgeStat extends EdgeStat {
+  pattern: string;
+  sectorEdges: SectorEdgeStat[];
+  stockEdges: StockEdgeStat[];
+}
 
 export interface BreakoutSignal {
   symbol: string;

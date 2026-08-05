@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User Watchlists
+    match /users/{userId}/watchlists/{watchlistId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && isValidId(watchlistId)
+        && request.resource.data.userId == userId
+        && request.resource.data.symbol is string
+        && request.resource.data.symbol.size() <= 30;
+      allow update: if isOwner(userId)
+        && request.resource.data.userId == userId
+        && request.resource.data.symbol == resource.data.symbol;
+      allow delete: if isOwner(userId);
+    }
+
+    // User Saved Backtests
+    match /users/{userId}/backtests/{backtestId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && isValidId(backtestId)
+        && request.resource.data.userId == userId
+        && request.resource.data.strategyName is string
+        && request.resource.data.strategyName.size() <= 100;
+      allow update: if isOwner(userId)
+        && request.resource.data.userId == userId;
+      allow delete: if isOwner(userId);
+    }
+
+    // Price Alerts
+    match /users/{userId}/alerts/{alertId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && isValidId(alertId)
+        && request.resource.data.userId == userId
+        && request.resource.data.symbol is string
+        && request.resource.data.symbol.size() <= 30;
+      allow update: if isOwner(userId)
+        && request.resource.data.userId == userId;
+      allow delete: if isOwner(userId);
+    }
+
+    // User Settings / Preferences
+    match /users/{userId}/settings/{settingId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && isValidId(settingId)
+        && request.resource.data.userId == userId;
+      allow delete: if isOwner(userId);
+    }
+  }
+}

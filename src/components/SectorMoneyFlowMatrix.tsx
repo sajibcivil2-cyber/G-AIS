@@ -47,6 +47,35 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
   const sectorAnalytics = useMemo(() => {
     if (!stocks || stocks.length === 0) return [];
 
+    const NON_EQUITY_SECTORS = new Set([
+      'MUTUAL FUNDS',
+      'MUTUAL FUND',
+      'CORPORATE BOND',
+      'TREASURY BOND',
+      'BONDS',
+      'DEBENTURES',
+      'GOVT TREASURY BOND'
+    ]);
+
+    // 1. Gather all unique market trading dates across all valid stocks
+    const allDatesSet = new Set<string>();
+    stocks.forEach((s) => {
+      if (!s.sector || NON_EQUITY_SECTORS.has(s.sector.toUpperCase())) return;
+      (s.candles || []).forEach((c) => {
+        if (c && c.date) allDatesSet.add(c.date);
+      });
+    });
+
+    const sortedMarketDates = Array.from(allDatesSet).sort(
+      (a, b) => new Date(a).getTime() - new Date(b).getTime()
+    );
+
+    if (sortedMarketDates.length === 0) return [];
+
+    // Latest 5 and 20 market trading dates
+    const recent5Dates = new Set(sortedMarketDates.slice(-5));
+    const past20Dates = new Set(sortedMarketDates.slice(-20));
+
     const sectorMap = new Map<
       string,
       {
@@ -62,26 +91,43 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
     let grandTotal5dTurnoverBdt = 0;
 
     stocks.forEach((s) => {
-      if (!s.sector || !s.candles || s.candles.length < 5) return;
+      if (!s.sector || !s.candles || s.candles.length === 0) return;
+      if (NON_EQUITY_SECTORS.has(s.sector.toUpperCase())) return;
+
       const len = s.candles.length;
+      const candleDateMap = new Map<string, { close: number; volume: number }>();
+      s.candles.forEach((c) => candleDateMap.set(c.date, c));
 
-      // Last 5 days daily avg turnover
-      const recent5 = s.candles.slice(-5);
-      const total5dVol = recent5.reduce((sum, c) => sum + c.close * c.volume, 0);
-      const avg5dDailyBdt = total5dVol / Math.min(5, recent5.length);
+      // Calculate turnover over the global recent 5 market dates
+      let total5dVolBdt = 0;
+      let daysFound5d = 0;
+      recent5Dates.forEach((d) => {
+        const c = candleDateMap.get(d);
+        if (c) {
+          total5dVolBdt += c.close * c.volume;
+          daysFound5d++;
+        }
+      });
+      const avg5dDailyBdt = total5dVolBdt / Math.max(1, daysFound5d || recent5Dates.size);
 
-      // Past 20 days daily avg turnover
-      const past20 = s.candles.slice(-Math.min(20, len));
-      const total20dVol = past20.reduce((sum, c) => sum + c.close * c.volume, 0);
-      const avg20dDailyBdt = total20dVol / Math.min(20, past20.length);
+      // Calculate turnover over the global past 20 market dates
+      let total20dVolBdt = 0;
+      let daysFound20d = 0;
+      past20Dates.forEach((d) => {
+        const c = candleDateMap.get(d);
+        if (c) {
+          total20dVolBdt += c.close * c.volume;
+          daysFound20d++;
+        }
+      });
+      const avg20dDailyBdt = total20dVolBdt / Math.max(1, daysFound20d || past20Dates.size);
 
-      // Estimate market cap from last close & avg turnover or proxy shares (e.g. 100M shares base)
+      // Estimate market cap from last close & turnover factor
       const lastClose = s.candles[len - 1].close;
-      // Proxy shares estimated from turnover liquidity factor or minimum 80M BDT shares
       const estimatedShares = Math.max(80000000, (s.avgTurnoverBdtMillion * 1000000) / (lastClose * 0.02 || 1));
       const estCapBdt = lastClose * estimatedShares;
 
-      // Calculate recent price gain (last candle vs 5 candles ago)
+      // Calculate recent price gain (last candle vs 5 trading candles ago)
       const price5dAgo = len >= 5 ? s.candles[len - 5].close : s.candles[0].close;
       const gainPct = price5dAgo > 0 ? ((lastClose - price5dAgo) / price5dAgo) * 100 : 0;
 
@@ -117,10 +163,11 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       const current5dTurnoverCrores = data.recent5dTurnoverBdt / 10000000;
       const baseline20dTurnoverCrores = data.past20dTurnoverBdt / 10000000;
 
-      const moneyFlowExpansionRatio =
-        baseline20dTurnoverCrores > 0
-          ? current5dTurnoverCrores / baseline20dTurnoverCrores
-          : 1.0;
+      // Minimum baseline floor of 0.2 Crore (20 Lakh BDT) to prevent division-by-near-zero spikes
+      const MIN_BASELINE_CRORES = 0.2;
+      const effectiveBaselineCrores = Math.max(baseline20dTurnoverCrores, MIN_BASELINE_CRORES);
+
+      const moneyFlowExpansionRatio = current5dTurnoverCrores / effectiveBaselineCrores;
 
       const marketMoneyFlowSharePct =
         grandTotal5dTurnoverBdt > 0
@@ -129,19 +176,22 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
 
       const estimatedMarketCapCrores = data.totalMarketCapBdt / 10000000;
 
-      // Velocity: daily turnover as % of market cap (multiplied by 100 for visibility)
       const turnoverVelocityPct =
         estimatedMarketCapCrores > 0
           ? (current5dTurnoverCrores / estimatedMarketCapCrores) * 100
           : 0;
 
-      // Status classification based on historical DSE sector breakout rules
+      // Status classification based on robust DSE sector breakout rules
       let status: SectorAnalytics['status'] = 'CONSOLIDATING';
-      if (moneyFlowExpansionRatio >= 1.8 && marketMoneyFlowSharePct >= 6.0) {
+      if (
+        moneyFlowExpansionRatio >= 1.5 &&
+        current5dTurnoverCrores >= 0.5 &&
+        marketMoneyFlowSharePct >= 3.0
+      ) {
         status = 'REPEATING_BREAKOUT'; // Historic institutional money flow surge trigger
-      } else if (moneyFlowExpansionRatio >= 1.25) {
+      } else if (moneyFlowExpansionRatio >= 1.2 && current5dTurnoverCrores >= 0.2) {
         status = 'ACCUMULATING';
-      } else if (moneyFlowExpansionRatio < 0.8) {
+      } else if (moneyFlowExpansionRatio < 0.75) {
         status = 'OUTFLOW';
       }
 
@@ -160,7 +210,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       });
     });
 
-    // Sort by Money Flow Expansion Ratio descending
+    // Sort by Money Flow Expansion Ratio descending (prioritizing sectors with active turnover)
     return result.sort((a, b) => b.moneyFlowExpansionRatio - a.moneyFlowExpansionRatio);
   }, [stocks]);
 

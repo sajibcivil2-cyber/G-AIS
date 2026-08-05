@@ -43,6 +43,8 @@ export const EXPLICIT_SECTOR_MAP: Record<string, string> = {
   'ABBA1STMF': 'Mutual Funds',
   'PRIMEINS': 'Insurance General',
   'MONNOFABR': 'Textile',
+  'SHASHADENIM': 'Textile',
+  'SHASHDENIM': 'Textile',
 };
 
 /**

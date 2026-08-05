@@ -21,8 +21,8 @@ import {
   ChevronRight,
   PieChart
 } from 'lucide-react';
-import { DseStockData, BacktestConfig, ScreenerStockCandidate, ScreenerDecisionStatus } from '../types';
-import { runDseStockScreener, parseCustomDseStockFiles, extractStockDataFromExtractedFiles } from '../utils/dseBacktestEngine';
+import { PatternEdgeStat, DseStockData, BacktestConfig, ScreenerStockCandidate, ScreenerDecisionStatus } from '../types';
+import { runDseStockScreener, parseCustomDseStockFiles, extractStockDataFromExtractedFiles, extractStockDataFromExtractedFilesAsync, mergeAndProcessStockDatasets } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
 import { StockDetailModal } from './StockDetailModal';
 
@@ -30,6 +30,7 @@ interface DseStockScreenerProps {
   stocks: DseStockData[];
   config: BacktestConfig;
   selectedPatternFilter?: string;
+  edgeStats?: PatternEdgeStat[];
   onUpdateConfig: (newConfig: BacktestConfig) => void;
   onSelectStockForChart: (symbol: string) => void;
   onCustomStockUploaded: (newStocks: DseStockData[]) => void;
@@ -39,6 +40,7 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   stocks,
   config,
   selectedPatternFilter,
+  edgeStats,
   onUpdateConfig,
   onSelectStockForChart,
   onCustomStockUploaded,
@@ -51,8 +53,8 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
   // Run Screener Analysis across current stock pool
   const candidates = useMemo(() => {
-    return runDseStockScreener(stocks, config);
-  }, [stocks, config]);
+    return runDseStockScreener(stocks, config, edgeStats);
+  }, [stocks, config, edgeStats]);
 
   // Distinct Sectors in Stock Pool
   const sectors = useMemo(() => {
@@ -109,54 +111,102 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
     return topPicks.find((c) => c.symbol === selectedTopPickSymbol) || topPicks[0] || null;
   }, [topPicks, selectedTopPickSymbol]);
 
+  const [isBatchUploading, setIsBatchUploading] = useState(false);
+  const [batchStatus, setBatchStatus] = useState('');
+
   // Handle custom stock dataset upload directly in screener (Supports selecting multiple files at once)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     const filesArray: File[] = Array.from(files);
-    const allParsedStocks: DseStockData[] = [];
-    const processedNames: string[] = [];
+    setIsBatchUploading(true);
+    setBatchStatus(`Preparing to extract ${filesArray.length} file(s)...`);
 
-    for (const file of filesArray) {
-      if (file.name.toLowerCase().endsWith('.zip')) {
-        try {
-          const extracted = await parseZipFile(file);
-          const zipStocks = extractStockDataFromExtractedFiles(extracted);
-          allParsedStocks.push(...zipStocks);
-          processedNames.push(file.name);
-        } catch (err) {
-          console.error(`Error reading ZIP file ${file.name}:`, err);
+    try {
+      const allParsedStocks: DseStockData[] = [];
+      const processedNames: string[] = [];
+
+      for (let i = 0; i < filesArray.length; i++) {
+        const file = filesArray[i];
+        setBatchStatus(`Processing file ${i + 1} of ${filesArray.length}: ${file.name}`);
+
+        // Yield to event loop every 2 files so UI stays responsive
+        if (i % 2 === 0) {
+          await new Promise((r) => setTimeout(r, 0));
         }
-      } else {
-        try {
-          const content = await file.text();
-          if (content) {
-            const parsed = parseCustomDseStockFiles(content, file.name);
-            allParsedStocks.push(...parsed);
+
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          try {
+            const extracted = await parseZipFile(file, (processed, total) => {
+              setBatchStatus(`Extracting ZIP ${file.name} (${processed}/${total} files)...`);
+            });
+            const zipStocks = await extractStockDataFromExtractedFilesAsync(extracted, (p, t) => {
+              setBatchStatus(`Parsing extracted dataset (${p}/${t})...`);
+            });
+            allParsedStocks.push(...zipStocks);
             processedNames.push(file.name);
+          } catch (err) {
+            console.error(`Error reading ZIP file ${file.name}:`, err);
           }
-        } catch (err) {
-          console.error(`Error reading file ${file.name}:`, err);
+        } else {
+          try {
+            const content = await file.text();
+            if (content) {
+              const parsed = parseCustomDseStockFiles(content, file.name);
+              allParsedStocks.push(...parsed);
+              processedNames.push(file.name);
+            }
+          } catch (err) {
+            console.error(`Error reading file ${file.name}:`, err);
+          }
         }
       }
-    }
 
-    if (allParsedStocks.length > 0) {
-      onCustomStockUploaded(allParsedStocks);
-      const fileCountMsg = filesArray.length === 1
-        ? `"${filesArray[0].name}"`
-        : `${filesArray.length} files (${processedNames.slice(0, 3).join(', ')}${filesArray.length > 3 ? '...' : ''})`;
-      alert(`Successfully loaded ${allParsedStocks.length} stock dataset(s) from ${fileCountMsg}!`);
-    } else {
-      alert('Could not parse valid stock candles from the selected CSV/JSON file(s). Ensure CSV includes Date, Open, High, Low, Close, Volume.');
-    }
+      setBatchStatus('Validating and merging stock pools...');
+      await new Promise((r) => setTimeout(r, 0));
 
-    e.target.value = '';
+      const mergedStocks = mergeAndProcessStockDatasets(allParsedStocks);
+
+      if (mergedStocks.length > 0) {
+        onCustomStockUploaded(mergedStocks);
+        const fileCountMsg = filesArray.length === 1
+          ? `"${filesArray[0].name}"`
+          : `${filesArray.length} files (${processedNames.slice(0, 3).join(', ')}${filesArray.length > 3 ? '...' : ''})`;
+        alert(`Successfully loaded ${mergedStocks.length} unique stock dataset(s) from ${fileCountMsg}!`);
+      } else {
+        alert('Could not parse valid stock candles from the selected CSV/JSON file(s). Ensure CSV includes Date, Open, High, Low, Close, Volume.');
+      }
+    } finally {
+      setIsBatchUploading(false);
+      setBatchStatus('');
+      e.target.value = '';
+    }
   };
 
   return (
     <div className="space-y-6">
+      {/* Batch Upload Progress Overlay Modal */}
+      {isBatchUploading && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto animate-pulse">
+              <Upload className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-white">Extracting & Processing Datasets</h3>
+              <p className="text-xs text-indigo-300 font-mono animate-pulse">{batchStatus}</p>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+              <div className="bg-indigo-500 h-full animate-pulse w-full" />
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Non-blocking multi-file & ZIP parser active. Please wait...
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Top Banner: Decision-Making High Profit Picks Overview */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
         <div className="absolute -top-24 -right-24 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />

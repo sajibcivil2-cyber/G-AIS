@@ -27,7 +27,8 @@ import {
   Filter,
   Bell,
   Trash2,
-  Plus
+  Plus,
+  Upload
 } from 'lucide-react';
 import { DseStockData, DseStockCandle, BacktestConfig, BacktestSummary, BreakoutSignal, ExtractedFile } from '../types';
 import {
@@ -36,8 +37,11 @@ import {
   parseCustomDseStockFile,
   parseCustomDseStockFiles,
   extractStockDataFromExtractedFiles,
+  extractStockDataFromExtractedFilesAsync,
+  mergeAndProcessStockDatasets,
   filterActiveStocks,
-  evaluateStockForScreener
+  evaluateStockForScreener,
+  calculateEdgeStats
 } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
 import { DseVolumeBreakoutChart } from './DseVolumeBreakoutChart';
@@ -48,6 +52,7 @@ import { DseStockComparer } from './DseStockComparer';
 import { SectorMoneyFlowMatrix } from './SectorMoneyFlowMatrix';
 import { BacktestSummaryDashboard } from './BacktestSummaryDashboard';
 import { StockDetailModal } from './StockDetailModal';
+import { EdgeAnalysisDashboard } from './EdgeAnalysisDashboard';
 import {
   loadDatabaseFromStorage,
   saveDatabaseToStorage,
@@ -63,7 +68,7 @@ interface DseBacktesterProps {
 
 export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) => {
   // Navigation State inside Backtest Hub
-  const [activeSubTab, setActiveSubTab] = useState<'screener' | 'compare' | 'chart' | 'lab'>('screener');
+  const [activeSubTab, setActiveSubTab] = useState<'screener' | 'compare' | 'chart' | 'lab' | 'edge'>('screener');
 
   // Strategy Configuration State
   const [config, setConfig] = useState<BacktestConfig>({
@@ -141,13 +146,17 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
 
   // Auto-extract stock datasets if user uploaded a ZIP archive or CSV files
   useEffect(() => {
+    let isMounted = true;
     if (uploadedFiles && uploadedFiles.length > 0) {
-      const extractedStocks = extractStockDataFromExtractedFiles(uploadedFiles);
-      const validStocks = filterActiveStocks(extractedStocks);
-      if (validStocks.length > 0) {
-        handleAddCustomStocks(validStocks);
-      }
+      extractStockDataFromExtractedFilesAsync(uploadedFiles).then((extractedStocks) => {
+        if (!isMounted) return;
+        const validStocks = filterActiveStocks(extractedStocks);
+        if (validStocks.length > 0) {
+          handleAddCustomStocks(validStocks);
+        }
+      });
     }
+    return () => { isMounted = false; };
   }, [uploadedFiles]);
 
   // Handle custom stock datasets uploaded directly inside screener/backtester.
@@ -284,6 +293,10 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
   const backtestResult: BacktestSummary = useMemo(() => {
     return runDseVolumeBreakoutBacktest(displayedStocks, config);
   }, [displayedStocks, config]);
+  
+  const edgeStats = useMemo(() => {
+    return calculateEdgeStats(backtestResult.signals);
+  }, [backtestResult.signals]);
 
   // Filter signals by technical pattern if user selected a filter
   const filteredSignals = useMemo(() => {
@@ -312,54 +325,79 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
     return { dateStr, isStale, hoursDiff };
   }, [activeStockPool]);
 
+  const [isBatchUploading, setIsBatchUploading] = useState(false);
+  const [batchUploadStatus, setBatchUploadStatus] = useState('');
+
   // Handle Custom Dataset File Upload (Supports selecting multiple CSV/ZIP/JSON files at once)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
     const filesArray: File[] = Array.from(fileList);
-    const allParsedStocks: DseStockData[] = [];
-    const processedFileNames: string[] = [];
+    setIsBatchUploading(true);
+    setBatchUploadStatus(`Preparing to extract ${filesArray.length} file(s)...`);
 
-    for (const file of filesArray) {
-      if (file.name.toLowerCase().endsWith('.zip')) {
-        try {
-          const extracted = await parseZipFile(file);
-          const zipStocks = extractStockDataFromExtractedFiles(extracted);
-          allParsedStocks.push(...zipStocks);
-          processedFileNames.push(file.name);
-        } catch (err) {
-          console.error(`Error reading ZIP file ${file.name}:`, err);
+    try {
+      const allParsedStocks: DseStockData[] = [];
+      const processedFileNames: string[] = [];
+
+      for (let i = 0; i < filesArray.length; i++) {
+        const file = filesArray[i];
+        setBatchUploadStatus(`Processing file ${i + 1} of ${filesArray.length}: ${file.name}`);
+
+        // Yield to main thread every 2 files
+        if (i % 2 === 0) {
+          await new Promise((r) => setTimeout(r, 0));
         }
-      } else {
-        try {
-          const text = await file.text();
-          if (text) {
-            const parsed = parseCustomDseStockFiles(text, file.name);
-            allParsedStocks.push(...parsed);
+
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          try {
+            const extracted = await parseZipFile(file, (processed, total) => {
+              setBatchUploadStatus(`Extracting ZIP ${file.name} (${processed}/${total} files)...`);
+            });
+            const zipStocks = await extractStockDataFromExtractedFilesAsync(extracted, (p, t) => {
+              setBatchUploadStatus(`Parsing CSVs from ZIP (${p}/${t})...`);
+            });
+            allParsedStocks.push(...zipStocks);
             processedFileNames.push(file.name);
+          } catch (err) {
+            console.error(`Error reading ZIP file ${file.name}:`, err);
           }
-        } catch (err) {
-          console.error(`Error reading file ${file.name}:`, err);
+        } else {
+          try {
+            const text = await file.text();
+            if (text) {
+              const parsed = parseCustomDseStockFiles(text, file.name);
+              allParsedStocks.push(...parsed);
+              processedFileNames.push(file.name);
+            }
+          } catch (err) {
+            console.error(`Error reading file ${file.name}:`, err);
+          }
         }
       }
+
+      setBatchUploadStatus('Merging and validating active stock datasets...');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const validParsedStocks = mergeAndProcessStockDatasets(allParsedStocks);
+
+      if (validParsedStocks.length > 0) {
+        handleAddCustomStocks(validParsedStocks);
+        const fileCountMsg = filesArray.length === 1
+          ? `"${filesArray[0].name}"`
+          : `${filesArray.length} files (${processedFileNames.slice(0, 3).join(', ')}${filesArray.length > 3 ? '...' : ''})`;
+        alert(`Successfully loaded ${validParsedStocks.length} active stock dataset(s) from ${fileCountMsg}!`);
+      } else if (allParsedStocks.length > 0) {
+        alert(`Parsed ${allParsedStocks.length} stocks, but all were filtered out (e.g. Bonds, Mutual Funds).`);
+      } else {
+        alert('Could not parse valid stock candles from the selected file(s). Ensure CSV files include columns: Date, Open, High, Low, Close, Volume.');
+      }
+    } finally {
+      setIsBatchUploading(false);
+      setBatchUploadStatus('');
+      e.target.value = '';
     }
-
-    const validParsedStocks = filterActiveStocks(allParsedStocks);
-
-    if (validParsedStocks.length > 0) {
-      handleAddCustomStocks(validParsedStocks);
-      const fileCountMsg = filesArray.length === 1
-        ? `"${filesArray[0].name}"`
-        : `${filesArray.length} files (${processedFileNames.slice(0, 3).join(', ')}${filesArray.length > 3 ? '...' : ''})`;
-      alert(`Successfully loaded ${validParsedStocks.length} active stock dataset(s) from ${fileCountMsg}!`);
-    } else if (allParsedStocks.length > 0) {
-      alert(`Parsed ${allParsedStocks.length} stocks, but all were filtered out (e.g. Bonds, Mutual Funds).`);
-    } else {
-      alert('Could not parse valid stock candles from the selected file(s). Ensure CSV files include columns: Date, Open, High, Low, Close, Volume.');
-    }
-
-    e.target.value = '';
   };
 
   // Check Price Alerts
@@ -402,6 +440,27 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {/* Batch Upload Progress Overlay Modal */}
+      {isBatchUploading && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto animate-pulse">
+              <Upload className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-white">Parsing Bulk Datasets</h3>
+              <p className="text-xs text-emerald-300 font-mono animate-pulse">{batchUploadStatus}</p>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+              <div className="bg-emerald-500 h-full animate-pulse w-full" />
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Non-blocking streaming engine active. Merging datasets without freezing UI...
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Navigation Sub-Header Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-xl">
         {/* Navigation Tabs */}
@@ -452,6 +511,18 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
           >
             <Sliders className="w-4 h-4 text-amber-300" />
             <span>🧪 Strategy & Backtest Lab</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('edge')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              activeSubTab === 'edge'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
+                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+            }`}
+          >
+            <Target className="w-4 h-4 text-fuchsia-300" />
+            <span>🎯 Edge Analysis</span>
           </button>
 
           <button
@@ -575,6 +646,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
           stocks={displayedStocks}
           config={config}
           selectedPatternFilter={selectedPatternFilter}
+          edgeStats={edgeStats}
           onUpdateConfig={setConfig}
           onSelectStockForChart={(sym) => {
             setChartTargetSymbol(sym);
@@ -590,6 +662,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
           stocks={displayedStocks}
           config={config}
           signals={backtestResult.signals}
+          edgeStats={edgeStats}
           onSelectStockForChart={(sym) => {
             setChartTargetSymbol(sym);
             setActiveSubTab('chart');
@@ -1025,7 +1098,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono">
-                {filteredSignals.map((sig, idx) => (
+                {filteredSignals.slice(0, 100).map((sig, idx) => (
                   <tr
                     key={idx}
                     onClick={() => setSelectedSignal(sig)}
@@ -1081,6 +1154,11 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
                 ))}
               </tbody>
             </table>
+            {filteredSignals.length > 100 && (
+              <div className="text-center py-4 text-xs text-slate-500">
+                Showing the most recent 100 signals (out of {filteredSignals.length} total). Narrow your filters to see more specific setups.
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1088,7 +1166,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
       {/* Trade Setup Detail Modal */}
       {selectedSignal && (() => {
         const signalStock = displayedStocks.find((s) => s.symbol === selectedSignal.symbol);
-        const candidate = signalStock ? evaluateStockForScreener(signalStock, config, [selectedSignal]) : null;
+        const candidate = signalStock ? evaluateStockForScreener(signalStock, config, [selectedSignal], edgeStats) : null;
 
         const activeCandidate = candidate || {
           symbol: selectedSignal.symbol,
@@ -1145,6 +1223,14 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         );
       })()}
         </div>
+      )}
+
+      {/* VIEW 4: Edge Analysis */}
+      {activeSubTab === 'edge' && (
+        <EdgeAnalysisDashboard 
+          backtestResult={backtestResult}
+          stocks={activeStockPool}
+        />
       )}
 
       {/* Toast Notifications */}

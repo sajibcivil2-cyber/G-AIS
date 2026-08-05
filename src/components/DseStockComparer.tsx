@@ -18,7 +18,7 @@ import {
   Layers,
   FileText
 } from 'lucide-react';
-import { DseStockData, DseStockCandle, BacktestConfig, BreakoutSignal, ScreenerStockCandidate } from '../types';
+import { PatternEdgeStat, DseStockData, DseStockCandle, BacktestConfig, BreakoutSignal, ScreenerStockCandidate } from '../types';
 import { evaluateStockForScreener } from '../utils/dseBacktestEngine';
 import { StockDetailModal } from './StockDetailModal';
 
@@ -26,6 +26,7 @@ interface DseStockComparerProps {
   stocks: DseStockData[];
   config: BacktestConfig;
   signals: BreakoutSignal[];
+  edgeStats?: PatternEdgeStat[];
   onSelectStockForChart?: (symbol: string) => void;
 }
 
@@ -33,13 +34,14 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
   stocks,
   config,
   signals,
+  edgeStats,
   onSelectStockForChart,
 }) => {
   // Evaluated screener candidates map for detailed comparison
   const screenerMap = useMemo(() => {
     const map = new Map<string, ScreenerStockCandidate>();
     stocks.forEach((st) => {
-      const candidate = evaluateStockForScreener(st, config, signals);
+      const candidate = evaluateStockForScreener(st, config, signals, edgeStats);
       if (candidate) {
         map.set(st.symbol, candidate);
       }

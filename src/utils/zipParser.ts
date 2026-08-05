@@ -7,29 +7,45 @@ const TEXT_EXTENSIONS = [
   'dockerfile', 'sh', 'cjs', 'mjs', 'lock', 'csv', 'tsv', 'dat', 'prn', 'log'
 ];
 
-export async function parseZipFile(file: File): Promise<ExtractedFile[]> {
+export async function parseZipFile(file: File, onProgress?: (processed: number, total: number) => void): Promise<ExtractedFile[]> {
   const zip = new JSZip();
   const loadedZip = await zip.loadAsync(file);
   const files: ExtractedFile[] = [];
 
-  for (const [relativePath, zipEntry] of Object.entries(loadedZip.files)) {
-    if (zipEntry.dir) continue;
-    // Skip node_modules or dist/build caches if inside zip
-    if (relativePath.includes('node_modules/') || relativePath.includes('.git/')) {
-      continue;
+  const entries = Object.entries(loadedZip.files).filter(([path, entry]) => {
+    if (entry.dir) return false;
+    if (path.includes('node_modules/') || path.includes('.git/') || path.includes('__MACOSX/')) {
+      return false;
+    }
+    return true;
+  });
+
+  const total = entries.length;
+  let count = 0;
+
+  for (const [relativePath, zipEntry] of entries) {
+    count++;
+    if (onProgress && (count % 10 === 0 || count === total)) {
+      onProgress(count, total);
+    }
+
+    // Yield to main thread every 20 files to keep UI smooth and avoid browser lockup
+    if (count % 20 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
     const name = relativePath.split('/').pop() || relativePath;
     const ext = name.split('.').pop()?.toLowerCase() || '';
-
     const isText = TEXT_EXTENSIONS.includes(ext) || !ext;
 
     let content = '';
     let isBinary = !isText;
+    let size = 0;
 
     if (isText) {
       try {
         content = await zipEntry.async('string');
+        size = content.length;
       } catch {
         isBinary = true;
         content = '[Binary File]';
@@ -38,13 +54,19 @@ export async function parseZipFile(file: File): Promise<ExtractedFile[]> {
       content = '[Binary / Media Content]';
     }
 
-    // Estimate size
-    const uint8 = await zipEntry.async('uint8array');
+    if (isBinary) {
+      try {
+        const uint8 = await zipEntry.async('uint8array');
+        size = uint8.byteLength;
+      } catch {
+        size = 0;
+      }
+    }
 
     files.push({
       path: relativePath,
       name,
-      size: uint8.byteLength,
+      size,
       extension: ext,
       content,
       isBinary,

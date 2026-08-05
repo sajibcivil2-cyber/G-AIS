@@ -8,7 +8,7 @@ import { DseBacktester } from './components/DseBacktester';
 import { ExtractedFile, AuditResult, SampleProject } from './types';
 import { parseZipFile } from './utils/zipParser';
 import { runStaticAnalysis } from './utils/staticAnalyzer';
-import { extractStockDataFromExtractedFiles } from './utils/dseBacktestEngine';
+import { extractStockDataFromExtractedFiles, extractStockDataFromExtractedFilesAsync } from './utils/dseBacktestEngine';
 
 export default function App() {
   const [projectFiles, setProjectFiles] = useState<ExtractedFile[]>([]);
@@ -29,7 +29,7 @@ export default function App() {
       setProjectName(name);
 
       // Check if uploaded ZIP contains stock data CSVs
-      const stockData = extractStockDataFromExtractedFiles(extracted);
+      const stockData = await extractStockDataFromExtractedFilesAsync(extracted);
       if (stockData.length > 0) {
         setActiveTab('dse_backtester');
       } else {

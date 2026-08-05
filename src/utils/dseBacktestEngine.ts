@@ -21,7 +21,8 @@ import {
   TechnicalPatternType,
   HarmonicPatternDetails,
   ExtractedFile,
-  EarlyTrendAnalysis
+  EarlyTrendAnalysis,
+  PatternEdgeStat
 } from '../types';
 
 // Realistic Sample Datasets for Dhaka Stock Exchange (DSE) Companies
@@ -134,6 +135,60 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
     avgTurnoverBdtMillion: 68.4,
     candles: generateRealisticCandles(68.9, 380, 0.08, 4.0, '2026-08-02', 'Harmonic Pattern (C-to-D)'),
   },
+  {
+    symbol: 'BEACONPHAR',
+    name: 'Beacon Pharmaceuticals Ltd.',
+    sector: 'Pharmaceuticals & Chemicals',
+    yoyGrowthPct: 9.5,
+    peRatio: 22.1,
+    avgTurnoverBdtMillion: 125.0,
+    candles: generateRealisticCandles(185.0, 380, 0.12, 4.2, '2026-08-02', 'Inverse Head & Shoulders'),
+  },
+  {
+    symbol: 'UNIQUEHRL',
+    name: 'Unique Hotel & Resorts PLC',
+    sector: 'Travel & Leisure',
+    yoyGrowthPct: 15.2,
+    peRatio: 11.4,
+    avgTurnoverBdtMillion: 95.5,
+    candles: generateRealisticCandles(54.2, 380, 0.10, 4.5, '2026-08-02', 'Falling Wedge Breakout'),
+  },
+  {
+    symbol: 'EIL',
+    name: 'Express Insurance Limited',
+    sector: 'Insurance',
+    yoyGrowthPct: 4.5,
+    peRatio: 14.2,
+    avgTurnoverBdtMillion: 35.8,
+    candles: generateRealisticCandles(28.5, 380, 0.14, 5.0, '2026-08-02', 'Rounding Bottom'),
+  },
+  {
+    symbol: 'AAMRATECH',
+    name: 'aamra technologies limited',
+    sector: 'IT Sector',
+    yoyGrowthPct: 12.5,
+    peRatio: 18.2,
+    avgTurnoverBdtMillion: 55.8,
+    candles: generateRealisticCandles(38.5, 380, 0.11, 4.0, '2026-08-02', 'MA 10/20/30 Crossover'),
+  },
+  {
+    symbol: 'BSRMSTEEL',
+    name: 'BSRM Steels Limited',
+    sector: 'Engineering',
+    yoyGrowthPct: 8.5,
+    peRatio: 9.2,
+    avgTurnoverBdtMillion: 145.8,
+    candles: generateRealisticCandles(58.5, 380, 0.11, 4.0, '2026-08-02', 'Symmetrical Triangle'),
+  },
+  {
+    symbol: 'ORIONPHARM',
+    name: 'Orion Pharma Ltd.',
+    sector: 'Pharmaceuticals & Chemicals',
+    yoyGrowthPct: 10.5,
+    peRatio: 12.2,
+    avgTurnoverBdtMillion: 85.8,
+    candles: generateRealisticCandles(78.5, 380, 0.11, 4.0, '2026-08-02', 'Bullish Pennant'),
+  },
 ];
 
 // Helper to generate realistic DSE OHLCV candle histories ending on target date
@@ -226,6 +281,49 @@ function generateRealisticCandles(
         else if (dist === 14) { dailyChangePct = -0.035; } // B low
         else if (dist === 6) { dailyChangePct = 0.025; } // C bounce (Entry)
         else if (dist === 0) { dailyChangePct = 0.055; volume = baseVolume * 4.2; } // D target heading
+      }
+      else if (patternToForce === 'Inverse Head & Shoulders') {
+        if (dist === 25) { dailyChangePct = -0.05; } // Left shoulder
+        else if (dist === 20) { dailyChangePct = 0.03; } // Neckline
+        else if (dist === 14) { dailyChangePct = -0.06; } // Head (lowest)
+        else if (dist === 8) { dailyChangePct = 0.04; } // Neckline
+        else if (dist === 4) { dailyChangePct = -0.03; } // Right shoulder
+        else if (dist === 0) { dailyChangePct = 0.06; volume = baseVolume * 4.5; } // Breakout
+      }
+      else if (patternToForce === 'Falling Wedge Breakout') {
+        if (dist > 0 && dist <= 20) {
+          // Converging lower highs and lower lows
+          dailyChangePct = dist % 4 === 0 ? 0.03 : -0.035; 
+          volume = baseVolume * 0.4;
+        }
+        else if (dist === 0) { dailyChangePct = 0.07; volume = baseVolume * 4.0; } // Breakout
+      }
+      else if (patternToForce === 'Rounding Bottom') {
+        if (dist > 20 && dist <= 30) { dailyChangePct = -0.02; } // Dropping
+        else if (dist > 10 && dist <= 20) { dailyChangePct = (Math.random() - 0.5) * 0.01; } // Flattening
+        else if (dist > 0 && dist <= 10) { dailyChangePct = 0.015; } // Rising
+        else if (dist === 0) { dailyChangePct = 0.05; volume = baseVolume * 3.5; } // Breakout
+      }
+      else if (patternToForce === 'MA 10/20/30 Crossover') {
+        if (dist > 30) { dailyChangePct = -0.01; } // Downtrend
+        else if (dist > 15 && dist <= 30) { dailyChangePct = 0.005; } // Flattening
+        else if (dist > 0 && dist <= 15) { dailyChangePct = 0.02; } // 10MA crossing above 20MA/30MA
+        else if (dist === 0) { dailyChangePct = 0.06; volume = baseVolume * 3.5; } // Breakout
+      }
+      else if (patternToForce === 'Bullish Pennant') {
+        if (dist >= 10 && dist <= 12) { dailyChangePct = 0.06; } // Pole
+        else if (dist > 0 && dist < 10) { 
+           dailyChangePct = dist % 2 === 0 ? 0.015 : -0.02; 
+           volume = baseVolume * 0.4; 
+        }
+        else if (dist === 0) { dailyChangePct = 0.07; volume = baseVolume * 4.5; } // Breakout
+      }
+      else if (patternToForce === 'Symmetrical Triangle') {
+        if (dist > 0 && dist <= 20) {
+          dailyChangePct = dist % 4 === 0 ? 0.025 : -0.025; 
+          volume = baseVolume * 0.4;
+        }
+        else if (dist === 0) { dailyChangePct = 0.06; volume = baseVolume * 4.0; } // Breakout
       }
     }
 
@@ -679,6 +777,62 @@ export function detectTechnicalPattern(
     }
   }
 
+  // 1b. Check Bullish Pennant
+  // Pole: 8-15 days prior, Pennant: 4-8 days prior (converging)
+  const pennantLength = Math.min(8, Math.max(4, Math.floor(n * 0.25)));
+  const pennantCandles = priorCandles.slice(n - pennantLength);
+  const poleCandlesForPennant = priorCandles.slice(Math.max(0, n - pennantLength - 12), n - pennantLength);
+
+  if (poleCandlesForPennant.length >= 4 && pennantCandles.length >= 4) {
+    const poleStartClose = poleCandlesForPennant[0].close;
+    const poleHigh = Math.max(...poleCandlesForPennant.map((c) => c.high));
+    const poleGainPct = ((poleHigh - poleStartClose) / (poleStartClose || 1)) * 100;
+
+    const firstHalfPennantHighs = pennantCandles.slice(0, Math.floor(pennantLength / 2)).map(c => c.high);
+    const secondHalfPennantHighs = pennantCandles.slice(Math.floor(pennantLength / 2)).map(c => c.high);
+    const firstHalfPennantLows = pennantCandles.slice(0, Math.floor(pennantLength / 2)).map(c => c.low);
+    const secondHalfPennantLows = pennantCandles.slice(Math.floor(pennantLength / 2)).map(c => c.low);
+    
+    if (firstHalfPennantHighs.length > 0 && secondHalfPennantHighs.length > 0) {
+      const ph1 = Math.max(...firstHalfPennantHighs);
+      const ph2 = Math.max(...secondHalfPennantHighs);
+      const pl1 = Math.min(...firstHalfPennantLows);
+      const pl2 = Math.min(...secondHalfPennantLows);
+
+      // Pole >= +5.0% and Pennant is converging (lower highs, higher lows)
+      if (poleGainPct >= 5.0 && ph2 <= ph1 && pl2 >= pl1) {
+        const confidence = Math.min(97, Math.round(85 + poleGainPct * 0.6));
+        return {
+          detectedPattern: 'Bullish Pennant',
+          patternConfidence: confidence,
+          patternDescription: `Strong +${poleGainPct.toFixed(1)}% flagpole rise followed by a converging ${pennantCandles.length}-day pennant.`,
+        };
+      }
+    }
+  }
+
+  // 1c. Check Symmetrical Triangle
+  if (n >= 15) {
+    const firstHalfHighs = priorCandles.slice(0, Math.floor(n / 2)).map(c => c.high);
+    const secondHalfHighs = priorCandles.slice(Math.floor(n / 2)).map(c => c.high);
+    const firstHalfLows = priorCandles.slice(0, Math.floor(n / 2)).map(c => c.low);
+    const secondHalfLows = priorCandles.slice(Math.floor(n / 2)).map(c => c.low);
+    
+    const high1 = Math.max(...firstHalfHighs);
+    const high2 = Math.max(...secondHalfHighs);
+    const low1 = Math.min(...firstHalfLows);
+    const low2 = Math.min(...secondHalfLows);
+
+    // Highs are falling, lows are rising (contracting range)
+    if (high2 < high1 * 0.99 && low2 > low1 * 1.01) {
+       return {
+          detectedPattern: 'Symmetrical Triangle',
+          patternConfidence: 86,
+          patternDescription: `Symmetrical Triangle with lower highs and higher lows contracting before breakout.`,
+       };
+    }
+  }
+
   // 2. Check Double Bottom (W-Formation)
   if (n >= 18) {
     const half = Math.floor(n / 2);
@@ -745,6 +899,102 @@ export function detectTechnicalPattern(
       patternConfidence: 87,
       patternDescription: `Tight Volatility Contraction (VCP) compressed within a ${vcpRangePct.toFixed(1)}% range before institutional volume surge.`,
     };
+  }
+
+  // 6. Check Inverse Head & Shoulders
+  if (n >= 25) {
+    const p1 = priorCandles.slice(0, Math.floor(n / 3));
+    const p2 = priorCandles.slice(Math.floor(n / 3), Math.floor((2 * n) / 3));
+    const p3 = priorCandles.slice(Math.floor((2 * n) / 3));
+    
+    const leftShoulderLow = Math.min(...p1.map(c => c.low));
+    const headLow = Math.min(...p2.map(c => c.low));
+    const rightShoulderLow = Math.min(...p3.map(c => c.low));
+    
+    // Head must be lower than both shoulders
+    if (headLow < leftShoulderLow * 0.98 && headLow < rightShoulderLow * 0.98) {
+      // Shoulders should be somewhat balanced
+      const shoulderDiffPct = (Math.abs(leftShoulderLow - rightShoulderLow) / Math.max(leftShoulderLow, rightShoulderLow)) * 100;
+      if (shoulderDiffPct <= 8.0) {
+        return {
+          detectedPattern: 'Inverse Head & Shoulders',
+          patternConfidence: 94,
+          patternDescription: `Classic Inverse Head & Shoulders bottom with head at ৳${headLow.toFixed(1)} and symmetrical shoulders.`,
+        };
+      }
+    }
+  }
+
+  // 7. Check Falling Wedge Breakout
+  if (n >= 20) {
+    const firstHalfHighs = priorCandles.slice(0, Math.floor(n / 2)).map(c => c.high);
+    const secondHalfHighs = priorCandles.slice(Math.floor(n / 2)).map(c => c.high);
+    const firstHalfLows = priorCandles.slice(0, Math.floor(n / 2)).map(c => c.low);
+    const secondHalfLows = priorCandles.slice(Math.floor(n / 2)).map(c => c.low);
+    
+    const high1 = Math.max(...firstHalfHighs);
+    const high2 = Math.max(...secondHalfHighs);
+    const low1 = Math.min(...firstHalfLows);
+    const low2 = Math.min(...secondHalfLows);
+
+    // Both highs and lows are falling, but highs are falling faster than lows (converging)
+    if (high2 < high1 * 0.98 && low2 < low1 * 0.99) {
+      const highDrop = (high1 - high2) / high1;
+      const lowDrop = (low1 - low2) / low1;
+      
+      if (highDrop > lowDrop && highDrop > 0.05) {
+         return {
+            detectedPattern: 'Falling Wedge Breakout',
+            patternConfidence: 88,
+            patternDescription: `Price contracted within a Falling Wedge (Highs dropping faster than Lows) before upside breakout.`,
+         };
+      }
+    }
+  }
+
+  // 8. Rounding Bottom
+  if (n >= 30) {
+    const q1 = priorCandles.slice(0, Math.floor(n/4));
+    const q2 = priorCandles.slice(Math.floor(n/4), Math.floor(n/2));
+    const q3 = priorCandles.slice(Math.floor(n/2), Math.floor((3*n)/4));
+    const q4 = priorCandles.slice(Math.floor((3*n)/4));
+    
+    const min1 = Math.min(...q1.map(c => c.low));
+    const min2 = Math.min(...q2.map(c => c.low));
+    const min3 = Math.min(...q3.map(c => c.low));
+    const min4 = Math.min(...q4.map(c => c.low));
+    
+    // U-shape curve in lows: dropping, flattening, rising
+    if (min2 < min1 * 0.98 && min3 <= min2 * 1.02 && min4 > min3 * 1.02) {
+       return {
+          detectedPattern: 'Rounding Bottom',
+          patternConfidence: 85,
+          patternDescription: `Extended Rounding Bottom (Saucer) formation showing gradual shift from supply to demand.`,
+       };
+    }
+  }
+
+  // 9. MA 10/20/30 Crossover (Monthly Moving Average cross logic)
+  if (n >= 35) {
+    const ma10 = priorCandles.slice(-10).reduce((sum, c) => sum + c.close, 0) / 10;
+    const ma20 = priorCandles.slice(-20).reduce((sum, c) => sum + c.close, 0) / 20;
+    const ma30 = priorCandles.slice(-30).reduce((sum, c) => sum + c.close, 0) / 30;
+
+    const prevMa10 = priorCandles.slice(-15, -5).reduce((sum, c) => sum + c.close, 0) / 10;
+    const prevMa20 = priorCandles.slice(-25, -5).reduce((sum, c) => sum + c.close, 0) / 20;
+    const prevMa30 = priorCandles.slice(-35, -5).reduce((sum, c) => sum + c.close, 0) / 30;
+
+    // Current: 10MA > 20MA > 30MA (Bullish alignment)
+    // Previous: They were not in this alignment (so a crossover just happened recently)
+    if (ma10 > ma20 && ma20 > ma30) {
+      if (!(prevMa10 > prevMa20 && prevMa20 > prevMa30)) {
+        return {
+          detectedPattern: 'MA 10/20/30 Crossover',
+          patternConfidence: 89,
+          patternDescription: `Golden crossover of 10MA, 20MA, and 30MA indicating strong trend ignition.`,
+        };
+      }
+    }
   }
 
   // Default Box Range Consolidation
@@ -1150,6 +1400,7 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   SQUARETEXT: 'Textile',
   TOSRIFA: 'Textile',
   ARGONDENIM: 'Textile',
+  SHASHADENIM: 'Textile',
   SHASHDENIM: 'Textile',
   SIMTEX: 'Textile',
   MATINSPINN: 'Textile',
@@ -1355,11 +1606,11 @@ export function inferDseSector(symbol: string, rawSector?: string, rawName?: str
   if (/BANK|BNK|ISLAMIBANK|DUTCHBANGL|PUBALIBANK|BRACBANK|PRIMEBANK|CITYBANK|DHAKABANK|EXIMBANK|JAMUNABANK|MIDLANDBNK|NCCBANK|NRBBANK|ONEBANK|SBACBANK|SHAHJABANK|SIBL|TRUSTBANK|UCB|UTTARABANK|MERCANBANK|SOUTHEASTB/i.test(target)) return 'Bank';
   if (/FIN|LEASE|CAPITAL|HOLDING|FINANCE|IPDC|IDLC|DBH|GSP|LANKABA|MIDAS|BAY|PHOENIXFIN|FASFIN|BIFC|NHFIL|PLFSL/i.test(target)) return 'Financial Institution';
   if (/PHARM|CHEM|LAB|DRUG|BIO|MED|SQUR|RENATA|ACI|MARICO|BEACON|IBN|ORION|ACME|ADVENT|SILCO|KOHINOOR|KEYA|SALVO|WATA|TECHNODRUG|JMI/i.test(target)) return 'Pharmaceuticals & Chemicals';
-  if (/TEX|SPIN|DENIM|FABRIC|GARMENT|WOVEN|KNIT|COT|ENVOY|SQUARE|SIMTEX|MATIN|PACIFIC|MODERN|REGENT|RNSPIN|SAIHAM|SHEPHERD|TALLU|MONNOFAB/i.test(target)) return 'Textile';
+  if (/TEX|SPIN|DENIM|FABRIC|GARMENT|WOVEN|KNIT|COT|ENVOY|SQUARE|SIMTEX|MATIN|PACIFIC|MODERN|REGENT|RNSPIN|SAIHAM|SHEPHERD|TALLU|MONNOFAB|SHASHA/i.test(target)) return 'Textile';
   if (/LIFE|SANDHANI/i.test(target)) return 'Insurance Life';
   if (/\bINS\b|INSURANCE|GREENDELT|RELIANCINS|ASIAINS|BGIC|PRAGATIINS|PROVATIINS|REPUBLICA|NITOLINS|SONARBAINS|FAREASTINS|FEDERALINS|JANATAINS|KARNAPHULI|PEOPLESINS|RUPALIINS|SENAKALYAN|PRIMEINS|CENTRALINS|CONTININS|PARAMOUT|CITYINS|STANDARDIN|AGRANIINS|ASIAPACINS|CRYSTALINS|DHAKAAINS|EXIMINS|GLOBALINS|ISLAMIINS|MERCANINS|PROGRESSIVE|UNIONINS/i.test(target)) return 'Insurance General';
   if (/CEM|CEMENT|LHBL|HEIDELB|CROWN|MISEM|CONFID|ARAMIT/i.test(target)) return 'Cement';
-  if (/CER|CERAMIC|\\bRAK\\b|RAKCERAMIC|\\bSHIN\\b|SHINECPA|MONNOCERA|FUWANG/i.test(target)) return 'Ceramic Sector';
+  if (/CERAMIC|\bRAK\b|RAKCERAMIC|\bSHIN\b|SHINECPA|MONNOCERA|FUWANGCER/i.test(target)) return 'Ceramic Sector';
   if (/POWER|GAS|OIL|PETRO|ENERGY|GRID|ELECTRIC|TITAS|JAMUNAOIL|PADMA|DESCO|UPGDCL|SUMMIT|MJL|KPCL|DORIN|BARAKA|SHAHJIBAZA|LINDE/i.test(target)) return 'Fuel & Power';
   if (/STEEL|ISPAT|AUTO|CABLE|ENGINEER|METAL|PIPE|ALLOY|BSRM|GPH|WALTON|SINGER|KDS|AFTAB|RUNNER|COPPER|OIMEX|RSRM|BBS|ANWAR|DESH|ECABLE/i.test(target)) return 'Engineering';
   if (/FOOD|FEED|AGRO|BEV|ALLIED|SUGAR|SEA|POULTRY|GRAIN|BATBC|OLYMPIC|LOVELLO|EMERALD|FINEFOODS|AMCLPRAN|FUWANGFOOD|BEACHHATCH|RAHIMA|ZEAL/i.test(target)) return 'Food & Allied';
@@ -1379,7 +1630,7 @@ export function isSectorOrMarketIndex(symbol: string): boolean {
   const sym = symbol.trim().toUpperCase();
   if (!sym) return false;
   if (/^(DSEX|DSES|DS30|CSE|CASPI|CSX)$/i.test(sym)) return true;
-  if (/^\d{2}_/.test(sym)) return true;
+  if (/^\d{2}/.test(sym)) return true; // BDShare uses 00DSEX, 01Bank, etc.
   if (/_Sector$/i.test(sym) || /_Funds$/i.test(sym) || /_Bond$/i.test(sym) || /_Index$/i.test(sym)) return true;
   return false;
 }
@@ -1422,7 +1673,7 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
             candleMap.set(normDate, { date: normDate, open, high, low, close, volume });
           });
           const sorted = Array.from(candleMap.values()).sort(
-            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+            (a, b) => a.date.localeCompare(b.date)
           );
           results.push({
             ...item,
@@ -1606,7 +1857,7 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
         rawCandles.forEach((c) => candleMap.set(c.date, c));
 
         const sortedCandles = Array.from(candleMap.values()).sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+          (a, b) => a.date.localeCompare(b.date)
         );
 
         const meta = symbolMetaMap.get(sym) || {};
@@ -1654,6 +1905,10 @@ export function filterActiveStocks(stocks: DseStockData[]): DseStockData[] {
     const symbolUpper = s.symbol.toUpperCase();
     const nameUpper = (s.name || '').toUpperCase();
     
+    if (isSectorOrMarketIndex(symbolUpper)) {
+      return false;
+    }
+
     if (
       symbolUpper.includes('BOND') || 
       symbolUpper.includes('TBOND') || 
@@ -1721,40 +1976,118 @@ export function filterActiveStocks(stocks: DseStockData[]): DseStockData[] {
   });
 }
 
-export function extractStockDataFromExtractedFiles(files: ExtractedFile[]): DseStockData[] {
+// Merges multiple raw stock dataset arrays across files, aligns dates, deduplicates symbols, and applies sector overrides
+export function mergeAndProcessStockDatasets(rawStocks: DseStockData[]): DseStockData[] {
+  if (!rawStocks || rawStocks.length === 0) return [];
+
   const stockMap = new Map<string, DseStockData>();
+
+  for (const stock of rawStocks) {
+    if (!stock || !stock.symbol) continue;
+    const sym = stock.symbol.toUpperCase().replace(/[^A-Z0-9_\-]/g, '');
+    if (!sym || isSectorOrMarketIndex(sym)) continue;
+
+    if (!stockMap.has(sym)) {
+      const candleMap = new Map<string, DseStockCandle>();
+      (stock.candles || []).forEach((c) => {
+        if (c && c.date) {
+          const normDate = normalizeDateString(c.date);
+          candleMap.set(normDate, { ...c, date: normDate });
+        }
+      });
+      const sortedCandles = Array.from(candleMap.values()).sort(
+        (a, b) => a.date.localeCompare(b.date)
+      );
+      const assignedSector = inferDseSector(sym, stock.sector, stock.name);
+      stockMap.set(sym, {
+        ...stock,
+        symbol: sym,
+        name: stock.name || `${sym} PLC`,
+        sector: assignedSector,
+        candles: sortedCandles,
+      });
+    } else {
+      const existing = stockMap.get(sym)!;
+      const candleMap = new Map<string, DseStockCandle>();
+      existing.candles.forEach((c) => candleMap.set(c.date, c));
+      (stock.candles || []).forEach((c) => {
+        if (c && c.date) {
+          const normDate = normalizeDateString(c.date);
+          candleMap.set(normDate, { ...c, date: normDate });
+        }
+      });
+
+      const mergedCandles = Array.from(candleMap.values()).sort(
+        (a, b) => a.date.localeCompare(b.date)
+      );
+
+      const assignedSector = inferDseSector(
+        sym,
+        stock.sector && stock.sector !== 'Miscellaneous' ? stock.sector : existing.sector,
+        stock.name || existing.name
+      );
+
+      stockMap.set(sym, {
+        ...existing,
+        name: stock.name && stock.name !== `${sym} PLC` ? stock.name : existing.name,
+        sector: assignedSector,
+        candles: mergedCandles,
+      });
+    }
+  }
+
+  const mergedList = Array.from(stockMap.values());
+  const activeList = filterActiveStocks(mergedList);
+  return activeList;
+}
+
+export function extractStockDataFromExtractedFiles(files: ExtractedFile[]): DseStockData[] {
+  const rawStocks: DseStockData[] = [];
 
   for (const file of files) {
     const ext = file.extension.toLowerCase();
     if (['csv', 'tsv', 'json', 'txt', 'dat', 'prn'].includes(ext) && file.content && !file.isBinary) {
-      const stocks = parseCustomDseStockFiles(file.content, file.name);
-      for (const stock of stocks) {
-        if (!stockMap.has(stock.symbol)) {
-          stockMap.set(stock.symbol, stock);
-        } else {
-          // Merge candles and deduplicate by date
-          const existing = stockMap.get(stock.symbol)!;
-          const candleMap = new Map<string, DseStockCandle>();
-          existing.candles.forEach((c) => candleMap.set(c.date, c));
-          stock.candles.forEach((c) => candleMap.set(c.date, c));
-
-          const mergedCandles = Array.from(candleMap.values()).sort(
-            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-          );
-
-          const bestSector = inferDseSector(stock.symbol, stock.sector !== 'Miscellaneous' ? stock.sector : existing.sector, stock.name);
-
-          stockMap.set(stock.symbol, {
-            ...stock,
-            sector: bestSector,
-            candles: mergedCandles,
-          });
-        }
-      }
+      const parsed = parseCustomDseStockFiles(file.content, file.name);
+      rawStocks.push(...parsed);
     }
   }
 
-  return filterActiveStocks(Array.from(stockMap.values()).filter((s) => s.candles.length >= 2));
+  return mergeAndProcessStockDatasets(rawStocks);
+}
+
+export async function extractStockDataFromExtractedFilesAsync(
+  files: ExtractedFile[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<DseStockData[]> {
+  const rawStocks: DseStockData[] = [];
+  const validFiles = files.filter(
+    (file) =>
+      ['csv', 'tsv', 'json', 'txt', 'dat', 'prn'].includes(file.extension.toLowerCase()) &&
+      file.content &&
+      !file.isBinary
+  );
+
+  const total = validFiles.length;
+  let count = 0;
+
+  for (const file of validFiles) {
+    count++;
+    if (onProgress && (count % 10 === 0 || count === total)) {
+      onProgress(count, total);
+    }
+    // Yield every 15 files to keep the browser responsive
+    if (count % 15 === 0) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    try {
+      const parsed = parseCustomDseStockFiles(file.content, file.name);
+      rawStocks.push(...parsed);
+    } catch (err) {
+      console.error(`Error parsing extracted file ${file.name}:`, err);
+    }
+  }
+
+  return mergeAndProcessStockDatasets(rawStocks);
 }
 
 // Early Trend Ignition Detector (Stage 1 Coil & Stage 2 Ignition)
@@ -1868,7 +2201,8 @@ export function detectEarlyTrendIgnition(candles: DseStockCandle[]): EarlyTrendA
 // High-Profit Decision-Making DSE Stock Screener Engine
 export function runDseStockScreener(
   stocks: DseStockData[],
-  config: BacktestConfig
+  config: BacktestConfig,
+  edgeStats?: PatternEdgeStat[]
 ): ScreenerStockCandidate[] {
   const candidates: ScreenerStockCandidate[] = [];
 
@@ -1985,6 +2319,37 @@ export function runDseStockScreener(
     else if (isVolumeSurge) pattern = 'Volume Surge Momentum';
     else if (latest.close > ma20Price) pattern = '20d Moving Average Uptrend Support';
 
+    // Edge Analysis Factor
+    let historicalEdgeWinRate = winRate;
+    let patternEdgeBonus = 0;
+    
+    // We try to match our determined 'pattern' string to the technical patterns in EdgeStats
+    // Note: Edge stats uses the TechnicalPatternType, while the screener 'pattern' string here is sometimes different.
+    // For a deeper integration, we'll map the backtest 'detectedPattern' (e.g., from 'signals' if we had them)
+    // Here we'll do a loose match or just check for the base pattern types if 'edgeStats' is provided.
+    if (edgeStats && edgeStats.length > 0) {
+      let matchedPatternEdge = edgeStats.find(e => pattern.includes(e.pattern) || e.pattern.includes('VCP') && pattern.includes('VCP'));
+      
+      if (matchedPatternEdge) {
+        const sectorEdge = matchedPatternEdge.sectorEdges.find(se => se.sector === stock.sector);
+        if (sectorEdge && sectorEdge.winRate >= 60) {
+           patternEdgeBonus += 15;
+           historicalEdgeWinRate = Math.max(historicalEdgeWinRate, sectorEdge.winRate);
+        }
+        
+        const stockEdge = matchedPatternEdge.stockEdges.find(se => se.symbol === stock.symbol);
+        if (stockEdge && stockEdge.winRate >= 70) {
+           patternEdgeBonus += 25;
+           historicalEdgeWinRate = Math.max(historicalEdgeWinRate, stockEdge.winRate);
+        }
+      }
+    }
+
+    if (patternEdgeBonus > 0) {
+       profitPotentialScore = Math.min(100, profitPotentialScore + patternEdgeBonus);
+       catalysts.push(`🎯 Pattern-Sector Edge (${historicalEdgeWinRate.toFixed(0)}% Win Prob)`);
+    }
+
     // Trade reasoning sentence
     let reasoning = 'Stock is maintaining healthy price structure above 20d MA with stable turnover.';
     if (decisionStatus === 'STRONG_BUY') {
@@ -2056,7 +2421,7 @@ export function runDseStockScreener(
       detectedPattern: finalDetectedPattern,
       patternConfidence: finalPatternConfidence,
       patternDescription: finalPatternDescription,
-      historicalWinRate: Math.round(winRate),
+      historicalWinRate: Math.round(historicalEdgeWinRate),
       tradeSetupReasoning: reasoning,
       recommendedPositionSizePct,
       peRatio: stock.peRatio,
@@ -2086,9 +2451,10 @@ export function runDseStockScreener(
 export function evaluateStockForScreener(
   stock: DseStockData,
   config: BacktestConfig,
-  signals?: BreakoutSignal[]
+  signals?: BreakoutSignal[],
+  edgeStats?: PatternEdgeStat[]
 ): ScreenerStockCandidate | null {
-  const candidates = runDseStockScreener([stock], config);
+  const candidates = runDseStockScreener([stock], config, edgeStats);
   return candidates.length > 0 ? candidates[0] : null;
 }
 
@@ -2240,6 +2606,81 @@ export function autoSyncAnomalousPrices(
     }
     return s;
   });
+}
+
+export function calculateEdgeStats(signals: BreakoutSignal[]): PatternEdgeStat[] {
+  const patterns = new Map<string, {
+    count: number;
+    wins: number;
+    totalReturn: number;
+    sectors: Record<string, { count: number; wins: number; totalReturn: number; stocks: Set<string> }>;
+    stocks: Record<string, { count: number; wins: number; totalReturn: number }>;
+  }>();
+
+  signals.forEach(sig => {
+    if (sig.status === 'In Progress') return; // Only count resolved trades
+    
+    if (!patterns.has(sig.detectedPattern)) {
+      patterns.set(sig.detectedPattern, { count: 0, wins: 0, totalReturn: 0, sectors: {}, stocks: {} });
+    }
+    
+    const stats = patterns.get(sig.detectedPattern)!;
+    stats.count += 1;
+    const isWin = sig.status === 'Target Hit';
+    if (isWin) stats.wins += 1;
+    stats.totalReturn += sig.realizedGainPct || 0;
+
+    // Sector Stats
+    if (!stats.sectors[sig.sector]) {
+      stats.sectors[sig.sector] = { count: 0, wins: 0, totalReturn: 0, stocks: new Set() };
+    }
+    const sectorStats = stats.sectors[sig.sector];
+    sectorStats.count += 1;
+    if (isWin) sectorStats.wins += 1;
+    sectorStats.totalReturn += sig.realizedGainPct || 0;
+    sectorStats.stocks.add(sig.symbol);
+
+    // Stock Stats
+    if (!stats.stocks[sig.symbol]) {
+      stats.stocks[sig.symbol] = { count: 0, wins: 0, totalReturn: 0 };
+    }
+    const stockStats = stats.stocks[sig.symbol];
+    stockStats.count += 1;
+    if (isWin) stockStats.wins += 1;
+    stockStats.totalReturn += sig.realizedGainPct || 0;
+  });
+
+  return Array.from(patterns.entries()).map(([pattern, data]) => {
+    const winRate = data.count > 0 ? (data.wins / data.count) * 100 : 0;
+    const avgReturn = data.count > 0 ? data.totalReturn / data.count : 0;
+    
+    const sectorEdges = Object.entries(data.sectors).map(([sector, sData]) => ({
+      sector,
+      count: sData.count,
+      wins: sData.wins,
+      winRate: sData.count > 0 ? (sData.wins / sData.count) * 100 : 0,
+      avgReturn: sData.count > 0 ? sData.totalReturn / sData.count : 0,
+      stocks: Array.from(sData.stocks)
+    })).sort((a, b) => b.winRate - a.winRate);
+
+    const stockEdges = Object.entries(data.stocks).map(([symbol, sData]) => ({
+      symbol,
+      count: sData.count,
+      wins: sData.wins,
+      winRate: sData.count > 0 ? (sData.wins / sData.count) * 100 : 0,
+      avgReturn: sData.count > 0 ? sData.totalReturn / sData.count : 0,
+    })).sort((a, b) => b.winRate - a.winRate);
+
+    return {
+      pattern,
+      count: data.count,
+      wins: data.wins,
+      winRate,
+      avgReturn,
+      sectorEdges,
+      stockEdges
+    };
+  }).sort((a, b) => b.winRate - a.winRate);
 }
 
 // Re-export DataIntegrityValidator component
