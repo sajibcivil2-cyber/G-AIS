@@ -41,8 +41,10 @@ import {
   mergeAndProcessStockDatasets,
   filterActiveStocks,
   evaluateStockForScreener,
-  calculateEdgeStats
+  calculateEdgeStats,
+  computeEquityCurve
 } from '../utils/dseBacktestEngine';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { parseZipFile } from '../utils/zipParser';
 import { DseVolumeBreakoutChart } from './DseVolumeBreakoutChart';
 import { DseStockScreener } from './DseStockScreener';
@@ -53,6 +55,7 @@ import { SectorMoneyFlowMatrix } from './SectorMoneyFlowMatrix';
 import { BacktestSummaryDashboard } from './BacktestSummaryDashboard';
 import { StockDetailModal } from './StockDetailModal';
 import { EdgeAnalysisDashboard } from './EdgeAnalysisDashboard';
+import { StopLossPostMortemDashboard } from './StopLossPostMortemDashboard';
 import {
   loadDatabaseFromStorage,
   saveDatabaseToStorage,
@@ -68,7 +71,7 @@ interface DseBacktesterProps {
 
 export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) => {
   // Navigation State inside Backtest Hub
-  const [activeSubTab, setActiveSubTab] = useState<'screener' | 'compare' | 'chart' | 'lab' | 'edge'>('screener');
+  const [activeSubTab, setActiveSubTab] = useState<'screener' | 'compare' | 'chart' | 'lab' | 'edge' | 'postmortem'>('screener');
 
   // Strategy Configuration State
   const [config, setConfig] = useState<BacktestConfig>({
@@ -526,6 +529,18 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
           </button>
 
           <button
+            onClick={() => setActiveSubTab('postmortem')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              activeSubTab === 'postmortem'
+                ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/30'
+                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4 text-rose-300" />
+            <span>🛡️ Stop-Loss Post-Mortem</span>
+          </button>
+
+          <button
             onClick={() => setShowPriceAlertModal(true)}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-slate-950 text-slate-400 hover:text-white border border-slate-800`}
           >
@@ -619,6 +634,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
           setActiveSubTab('chart');
         }}
         onOpenStrategyLab={() => setActiveSubTab('lab')}
+        onOpenStopLossDiagnostics={() => setActiveSubTab('postmortem')}
       />
 
       {/* Sector Money Flow Matrix & Rotation Analytics */}
@@ -862,6 +878,75 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
             <p className="text-[11px] text-slate-400 leading-relaxed border-t border-slate-800 pt-3">
               <strong className="text-slate-200">Key Insight:</strong> On DSE, strong volume breakouts (&gt;3.0x ADV) with preceding 5-day tight consolidation achieve peak profitability between <strong>+10 to +20 trading days</strong>. Holding past +30 days without trailing stop-losses often leads to profit clawback due to market liquidity cycles.
             </p>
+          </div>
+
+          {/* Portfolio Equity Curve Visualization Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  Portfolio Equity Curve & Cumulative Strategy Growth
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Simulated account equity trajectory across historical DSE breakout trade signals
+                </p>
+              </div>
+              {(() => {
+                const curveData = computeEquityCurve(backtestResult.signals);
+                const finalPt = curveData[curveData.length - 1];
+                const totalGainPct = finalPt ? finalPt.cumulativeGainPct : 0;
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">Total Backtest Growth:</span>
+                    <span className={`text-sm font-bold font-mono ${totalGainPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {totalGainPct >= 0 ? '+' : ''}{totalGainPct}%
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="h-64 w-full">
+              {(() => {
+                const curveData = computeEquityCurve(backtestResult.signals);
+                if (!curveData || curveData.length <= 1) {
+                  return (
+                    <div className="h-full flex items-center justify-center text-xs text-slate-500">
+                      No trade execution data available to plot equity curve.
+                    </div>
+                  );
+                }
+                return (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={curveData} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
+                      <YAxis stroke="#64748b" fontSize={10} tickFormatter={(v) => `BDT ${(v/1000).toFixed(0)}k`} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '11px', color: '#f8fafc' }}
+                        formatter={(val: any, name: any, item: any) => [
+                          `BDT ${Number(val).toLocaleString()} (${item.payload.cumulativeGainPct >= 0 ? '+' : ''}${item.payload.cumulativeGainPct}%)`,
+                          'Portfolio Equity'
+                        ]}
+                        labelFormatter={(label, items) => {
+                          const sym = items && items[0]?.payload?.symbol;
+                          return `Date: ${label} ${sym && sym !== 'START' ? `(${sym})` : ''}`;
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="portfolioValue"
+                        stroke="#10b981"
+                        strokeWidth={2.5}
+                        dot={{ r: 3, fill: '#10b981', strokeWidth: 1, stroke: '#022c22' }}
+                        activeDot={{ r: 6, fill: '#34d399', stroke: '#ffffff', strokeWidth: 2 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                );
+              })()}
+            </div>
           </div>
         </div>
       </div>
@@ -1230,6 +1315,25 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         <EdgeAnalysisDashboard 
           backtestResult={backtestResult}
           stocks={activeStockPool}
+        />
+      )}
+
+      {/* VIEW 5: Stop-Loss Post-Mortem Diagnostics */}
+      {activeSubTab === 'postmortem' && (
+        <StopLossPostMortemDashboard
+          report={backtestResult.stopLossReport}
+          onSelectStockForChart={(sym) => {
+            setChartTargetSymbol(sym);
+            setActiveSubTab('chart');
+          }}
+          onAutoApplyMitigationRules={() => {
+            setConfig((prev) => ({
+              ...prev,
+              minVolumeSurge: 2.8,
+              enableSectorTrendFilter: true,
+            }));
+            setActiveSubTab('screener');
+          }}
         />
       )}
 

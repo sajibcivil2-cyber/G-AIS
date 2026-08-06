@@ -19,10 +19,15 @@ import {
   Sliders,
   DollarSign,
   ChevronRight,
-  PieChart
+  PieChart,
+  Search,
+  Download,
+  Layers,
+  ChevronLeft,
+  RefreshCw
 } from 'lucide-react';
 import { PatternEdgeStat, DseStockData, BacktestConfig, ScreenerStockCandidate, ScreenerDecisionStatus } from '../types';
-import { runDseStockScreener, parseCustomDseStockFiles, extractStockDataFromExtractedFiles, extractStockDataFromExtractedFilesAsync, mergeAndProcessStockDatasets } from '../utils/dseBacktestEngine';
+import { runDseStockScreener, parseCustomDseStockFiles, extractStockDataFromExtractedFiles, extractStockDataFromExtractedFilesAsync, mergeAndProcessStockDatasets, generateFullDseMarketUniverse } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
 import { StockDetailModal } from './StockDetailModal';
 
@@ -45,10 +50,21 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   onSelectStockForChart,
   onCustomStockUploaded,
 }) => {
-  // Filter States
+  // Filter & Search States
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedSector, setSelectedSector] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'score' | 'rvol' | 'yoy' | 'winrate' | 'pe'>('score');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [minScoreFilter, setMinScoreFilter] = useState<number>(0);
+  const [minRiskRewardFilter, setMinRiskRewardFilter] = useState<number>(0);
+
+  // Automated Post-Mortem Fail-Safe Mode ('ACTIVE' = auto-filter, 'WARN' = show badges, 'OFF')
+  const [smartFailSafeMode, setSmartFailSafeMode] = useState<'ACTIVE' | 'WARN' | 'OFF'>('ACTIVE');
+
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(24);
+
   const [selectedCandidateModal, setSelectedCandidateModal] = useState<ScreenerStockCandidate | null>(null);
 
   // Run Screener Analysis across current stock pool
@@ -58,7 +74,7 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
   // Distinct Sectors in Stock Pool
   const sectors = useMemo(() => {
-    const list = Array.from(new Set(stocks.map((s) => s.sector)));
+    const list = Array.from(new Set(stocks.map((s) => s.sector))).sort();
     return ['ALL', ...list];
   }, [stocks]);
 
@@ -66,6 +82,16 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   const filteredCandidates = useMemo(() => {
     return candidates
       .filter((c) => {
+        // AUTOMATED POST-MORTEM FAIL-SAFE GUARD
+        if (smartFailSafeMode === 'ACTIVE') {
+          // Rule 1: Volume Exhaustion Trap (RVOL < 2.5x)
+          if (c.rvol20 < 2.5) return false;
+          // Rule 2: Extended Single Day Candle Chasing (> 5.5% single candle)
+          if (c.priceIncreasePct > 5.5) return false;
+          // Rule 3: Thin Liquidity Drag (< 15M BDT daily turnover)
+          if (c.avgVolume20 * c.currentPrice < 15000000) return false;
+        }
+
         if (config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
           if (!c.harmonicDetails) return false;
         }
@@ -78,6 +104,23 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
         }
         if (selectedSector !== 'ALL' && c.sector !== selectedSector) return false;
         if (selectedPatternFilter && selectedPatternFilter !== 'ALL' && c.detectedPattern !== selectedPatternFilter) return false;
+
+        // Search text filter
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const matchSym = c.symbol.toLowerCase().includes(q);
+          const matchName = c.stockName.toLowerCase().includes(q);
+          const matchSec = c.sector.toLowerCase().includes(q);
+          const matchPat = c.breakoutPattern.toLowerCase().includes(q);
+          if (!matchSym && !matchName && !matchSec && !matchPat) return false;
+        }
+
+        // Min Score Filter
+        if (minScoreFilter > 0 && c.profitPotentialScore < minScoreFilter) return false;
+
+        // Min Risk-Reward Filter
+        if (minRiskRewardFilter > 0 && c.riskRewardRatio < minRiskRewardFilter) return false;
+
         return true;
       })
       .sort((a, b) => {
@@ -88,7 +131,15 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
         if (sortBy === 'pe') return a.peRatio - b.peRatio;
         return 0;
       });
-  }, [candidates, selectedStatus, selectedSector, sortBy, selectedPatternFilter, config.strategyType]);
+  }, [candidates, selectedStatus, selectedSector, sortBy, selectedPatternFilter, config.strategyType, searchQuery, minScoreFilter, minRiskRewardFilter]);
+
+  // Paginated Candidate Subset
+  const totalPages = itemsPerPage === -1 ? 1 : Math.ceil(filteredCandidates.length / itemsPerPage) || 1;
+  const paginatedCandidates = useMemo(() => {
+    if (itemsPerPage === -1) return filteredCandidates;
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredCandidates.slice(start, start + itemsPerPage);
+  }, [filteredCandidates, currentPage, itemsPerPage]);
 
   // Executive Metrics
   const strongBuys = candidates.filter((c) => c.decisionStatus === 'STRONG_BUY');
@@ -96,12 +147,12 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   const earlyTrends = candidates.filter((c) => c.decisionStatus === 'EARLY_TREND_IGNITION' || c.earlyTrendStage === 'STAGE_2_IGNITION' || c.earlyTrendStage === 'STAGE_1_EARLY_COIL');
 
   const earlyRadarPicks = useMemo(
-  () => candidates
-    .filter(c => c.earlyTrendStage === 'STAGE_1_EARLY_COIL' || c.earlyTrendStage === 'STAGE_2_IGNITION')
-    .sort((a, b) => b.profitPotentialScore - a.profitPotentialScore)
-    .slice(0, 6),
-  [candidates]
-);
+    () => candidates
+      .filter(c => c.earlyTrendStage === 'STAGE_1_EARLY_COIL' || c.earlyTrendStage === 'STAGE_2_IGNITION')
+      .sort((a, b) => b.profitPotentialScore - a.profitPotentialScore)
+      .slice(0, 6),
+    [candidates]
+  );
 
   // Top Identified Picks Pool (Top 8 ranked candidates)
   const topPicks = useMemo(() => candidates.slice(0, 8), [candidates]);
@@ -113,6 +164,84 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
   const [isBatchUploading, setIsBatchUploading] = useState(false);
   const [batchStatus, setBatchStatus] = useState('');
+
+  // Handle Loading Full 100+ DSE Market Universe
+  const handleLoadFullUniverse = async () => {
+    setIsBatchUploading(true);
+    setBatchStatus('Generating full market universe (100+ DSE securities across 20 sectors)...');
+    await new Promise((r) => setTimeout(r, 100));
+
+    try {
+      const fullUniverse = generateFullDseMarketUniverse();
+      onCustomStockUploaded(fullUniverse);
+      setBatchStatus('');
+      alert(`Successfully loaded ${fullUniverse.length} DSE securities with full daily candle histories across all sectors!`);
+    } catch (err) {
+      console.error('Failed to generate full universe:', err);
+    } finally {
+      setIsBatchUploading(false);
+      setBatchStatus('');
+    }
+  };
+
+  // Export Filtered Screener Candidates to CSV
+  const handleExportCsv = () => {
+    if (filteredCandidates.length === 0) {
+      alert('No candidates matching current filter criteria to export.');
+      return;
+    }
+    const headers = [
+      'Symbol',
+      'Company Name',
+      'Sector',
+      'Decision Status',
+      'Profit Potential Score',
+      'LTP Entry Price',
+      'Target Price',
+      'Stop Loss Price',
+      'Risk Reward Ratio',
+      'Potential Gain %',
+      'Potential Risk %',
+      'Breakout Pattern',
+      'Pattern Confidence %',
+      'Historical Win Rate %',
+      'PE Ratio',
+      'YoY Growth %',
+      'RVOL 20d',
+      'Trade Setup Reasoning'
+    ];
+
+    const rows = filteredCandidates.map((c) => [
+      c.symbol,
+      `"${c.stockName.replace(/"/g, '""')}"`,
+      `"${c.sector.replace(/"/g, '""')}"`,
+      c.decisionStatus,
+      c.profitPotentialScore,
+      c.entryPrice,
+      c.targetPrice,
+      c.stopLossPrice,
+      c.riskRewardRatio,
+      c.potentialGainPct,
+      c.potentialRiskPct,
+      `"${c.breakoutPattern.replace(/"/g, '""')}"`,
+      c.patternConfidence,
+      c.historicalWinRate,
+      c.peRatio,
+      c.yoyGrowthPct,
+      c.rvol20,
+      `"${c.tradeSetupReasoning.replace(/"/g, '""')}"`
+    ]);
+
+    const csvStr = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `DSE_Screener_Candidates_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Handle custom stock dataset upload directly in screener (Supports selecting multiple files at once)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -434,6 +563,92 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
       {/* Interactive Controls & Filters Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+        {/* Market Universe Expansion & Action Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-gradient-to-r from-slate-950 via-indigo-950/30 to-slate-950 p-3 rounded-xl border border-indigo-500/30">
+          <div className="flex items-center gap-2 text-xs">
+            <Layers className="w-4 h-4 text-indigo-400 shrink-0" />
+            <div>
+              <span className="font-bold text-slate-200">Screener Universe Capacity: </span>
+              <span className="font-mono text-indigo-300 font-extrabold">{stocks.length} Securities</span>
+              <span className="text-slate-400 text-[11px] ml-2 font-mono">({candidates.length} analyzed)</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={handleLoadFullUniverse}
+              disabled={isBatchUploading}
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-bold text-xs shadow-md shadow-indigo-950/50 flex items-center justify-center gap-1.5 transition-colors w-full sm:w-auto"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isBatchUploading ? 'animate-spin' : ''}`} />
+              <span>Load Full 100+ DSE Universe</span>
+            </button>
+
+            <button
+              onClick={handleExportCsv}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs border border-slate-700 flex items-center justify-center gap-1.5 transition-colors w-full sm:w-auto"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Automated Post-Mortem Fail-Safe Guard Banner */}
+        <div className="bg-gradient-to-r from-rose-950/70 via-slate-950 to-indigo-950/70 border border-rose-500/40 p-3.5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-300 shrink-0">
+              <ShieldAlert className="w-4.5 h-4.5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-white">Automated Smart Fail-Safe Guard</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/30 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  Post-Mortem Rules Engine Active
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                Automatically protects your capital by auto-filtering candidates that match historical stop-loss failure patterns (Low RVOL &lt;2.5x, Overbought &gt;5.5%, Illiquidity).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => { setSmartFailSafeMode('ACTIVE'); setCurrentPage(1); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition-all flex items-center gap-1 ${
+                smartFailSafeMode === 'ACTIVE'
+                  ? 'bg-rose-600 text-white shadow-lg border border-rose-400 ring-2 ring-rose-500/30'
+                  : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+              }`}
+            >
+              <span>🛡️ AUTO-BLOCK (Active)</span>
+            </button>
+            <button
+              onClick={() => { setSmartFailSafeMode('WARN'); setCurrentPage(1); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition-all flex items-center gap-1 ${
+                smartFailSafeMode === 'WARN'
+                  ? 'bg-amber-600 text-white shadow-lg border border-amber-400 ring-2 ring-amber-500/30'
+                  : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+              }`}
+            >
+              <span>⚠️ WARN BADGES</span>
+            </button>
+            <button
+              onClick={() => { setSmartFailSafeMode('OFF'); setCurrentPage(1); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition-all ${
+                smartFailSafeMode === 'OFF'
+                  ? 'bg-slate-700 text-white shadow-lg'
+                  : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+              }`}
+            >
+              OFF
+            </button>
+          </div>
+        </div>
+
+        {/* Search & Decision Filter Row */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Status Filter Buttons */}
           <div className="flex flex-wrap items-center gap-2">
@@ -450,7 +665,7 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
             ].map((st) => (
               <button
                 key={st.id}
-                onClick={() => setSelectedStatus(st.id)}
+                onClick={() => { setSelectedStatus(st.id); setCurrentPage(1); }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   selectedStatus === st.id
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/40'
@@ -462,40 +677,94 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
             ))}
           </div>
 
-          {/* Sort & Sector Selectors */}
+          {/* Search Bar & Custom Upload */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Sector Dropdown */}
-            <select
-              value={selectedSector}
-              onChange={(e) => setSelectedSector(e.target.value)}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-            >
-              {sectors.map((sec) => (
-                <option key={sec} value={sec}>
-                  Sector: {sec}
-                </option>
-              ))}
-            </select>
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search symbol, company, sector..."
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono"
+              />
+            </div>
 
-            {/* Sort Selector */}
+            {/* Custom Stock Upload Button */}
+            <label className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-bold cursor-pointer border border-slate-700 flex items-center gap-1.5 transition-colors shrink-0">
+              <Upload className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Load CSV/ZIP</span>
+              <input type="file" multiple accept=".csv,.json,.txt,.zip" onChange={handleFileUpload} className="hidden" />
+            </label>
+          </div>
+        </div>
+
+        {/* Multi-Factor Screener Filters & Sort Row */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800/80">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {/* Sector Dropdown */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Sector:</span>
+              <select
+                value={selectedSector}
+                onChange={(e) => { setSelectedSector(e.target.value); setCurrentPage(1); }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              >
+                {sectors.map((sec) => (
+                  <option key={sec} value={sec}>
+                    {sec}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Min Profit Score Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Min Score:</span>
+              <select
+                value={minScoreFilter}
+                onChange={(e) => { setMinScoreFilter(Number(e.target.value)); setCurrentPage(1); }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-300 font-bold font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              >
+                <option value={0}>Any Score</option>
+                <option value={50}>50+ Score</option>
+                <option value={60}>60+ Score</option>
+                <option value={70}>70+ Score (High)</option>
+                <option value={80}>80+ Score (Elite)</option>
+              </select>
+            </div>
+
+            {/* Min Risk-Reward Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Min R:R Ratio:</span>
+              <select
+                value={minRiskRewardFilter}
+                onChange={(e) => { setMinRiskRewardFilter(Number(e.target.value)); setCurrentPage(1); }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-indigo-300 font-bold font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              >
+                <option value={0}>Any R:R</option>
+                <option value={1.5}>1.5:1+</option>
+                <option value={2.0}>2.0:1+</option>
+                <option value={2.5}>2.5:1+</option>
+                <option value={3.0}>3.0:1+</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Sort Selector */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-slate-400 font-medium">Sort By:</span>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
               className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-indigo-300 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
             >
-              <option value="score">Sort: Highest Profit Potential Score</option>
-              <option value="rvol">Sort: Highest Volume Surge (RVOL)</option>
-              <option value="yoy">Sort: Highest YoY Revenue Growth %</option>
-              <option value="winrate">Sort: Best Historical Win Rate %</option>
-              <option value="pe">Sort: Lowest P/E Ratio</option>
+              <option value="score">Highest Profit Potential Score</option>
+              <option value="rvol">Highest Volume Surge (RVOL)</option>
+              <option value="yoy">Highest YoY Revenue Growth %</option>
+              <option value="winrate">Best Historical Win Rate %</option>
+              <option value="pe">Lowest P/E Ratio</option>
             </select>
-
-            {/* Custom Stock Upload Button */}
-            <label className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-bold cursor-pointer border border-slate-700 flex items-center gap-1.5 transition-colors">
-              <Upload className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Load Dataset / CSV / ZIP</span>
-              <input type="file" multiple accept=".csv,.json,.txt,.zip" onChange={handleFileUpload} className="hidden" />
-            </label>
           </div>
         </div>
 
@@ -584,71 +853,125 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
         </div>
       </div>
 
-      {/* Screened Candidates Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredCandidates.map((candidate) => {
-          const isStrong = candidate.decisionStatus === 'STRONG_BUY';
-          const isWatch = candidate.decisionStatus === 'WATCHLIST_BREAKOUT';
+      {/* Candidate Result Header & Summary Counter */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs px-1">
+        <div className="flex items-center gap-2 text-slate-400">
+          <span>Showing</span>
+          <span className="font-mono font-bold text-white">{paginatedCandidates.length}</span>
+          <span>of</span>
+          <span className="font-mono font-bold text-indigo-400">{filteredCandidates.length}</span>
+          <span>matching candidates</span>
+          {searchQuery && (
+            <span className="text-amber-400 font-mono">for "{searchQuery}"</span>
+          )}
+        </div>
 
-          const candles = candidate.stock.candles;
-          let trendIcon = <Minus className="w-3.5 h-3.5" />;
-          let trendColor = 'text-slate-400';
-          let trendText = 'Neutral';
-
-          if (candles && candles.length >= 8) {
-            const last7 = candles.slice(-7);
-            const prev7 = candles.slice(-8, -1);
-            const sma7 = last7.reduce((sum, c) => sum + c.close, 0) / 7;
-            const sma7Prev = prev7.reduce((sum, c) => sum + c.close, 0) / 7;
-
-            if (sma7 > sma7Prev) {
-              trendIcon = <TrendingUp className="w-3.5 h-3.5" />;
-              trendColor = 'text-emerald-400';
-              trendText = 'Up';
-            } else if (sma7 < sma7Prev) {
-              trendIcon = <TrendingDown className="w-3.5 h-3.5" />;
-              trendColor = 'text-rose-400';
-              trendText = 'Down';
-            }
-          }
-
-          return (
-            <div
-              key={candidate.symbol}
-              onClick={() => setSelectedCandidateModal(candidate)}
-              className={`bg-slate-900 rounded-2xl p-5 border transition-all hover:border-indigo-500/50 hover:shadow-indigo-950/40 shadow-lg space-y-4 flex flex-col justify-between cursor-pointer group ${
-                isStrong
-                  ? 'border-emerald-500/50 bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950/20'
-                  : isWatch
-                  ? 'border-amber-500/40'
-                  : 'border-slate-800'
+        {/* Items Per Page Selector */}
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400">Per page:</span>
+          {[12, 24, 48, 100, -1].map((size) => (
+            <button
+              key={size}
+              onClick={() => { setItemsPerPage(size); setCurrentPage(1); }}
+              className={`px-2.5 py-1 rounded-lg font-mono font-bold ${
+                itemsPerPage === size
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
               }`}
             >
-              {/* Card Header */}
-              <div className="space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-extrabold text-white font-mono text-base">{candidate.symbol}</h3>
-                      <span className="text-[10px] text-slate-400 font-mono">({candidate.sector})</span>
-                    </div>
-                    <div className="text-xs text-slate-400 line-clamp-1">{candidate.stockName}</div>
-                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">Updated: <span className="text-slate-300">{candidate.latestDate}</span></div>
-                  </div>
+              {size === -1 ? 'All' : size}
+            </button>
+          ))}
+        </div>
+      </div>
 
-                  {/* Decision Status Badge */}
-                  <span
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold font-mono border shrink-0 ${
-                      isStrong
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                        : isWatch
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                        : 'bg-slate-800 text-slate-400 border-slate-700'
-                    }`}
-                  >
-                    {isStrong ? '🟢 STRONG BUY' : isWatch ? '🟡 WATCHLIST' : '🔵 ACCUMULATE'}
-                  </span>
-                </div>
+      {/* Screened Candidates Grid */}
+      {filteredCandidates.length === 0 ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
+          <AlertCircle className="w-10 h-10 text-amber-400 mx-auto" />
+          <h3 className="text-base font-bold text-white">No candidates matching current filters</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            Try adjusting search terms, minimum profit score, volume surge threshold, or sector filter to view more candidates.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {paginatedCandidates.map((candidate) => {
+            const isStrong = candidate.decisionStatus === 'STRONG_BUY';
+            const isWatch = candidate.decisionStatus === 'WATCHLIST_BREAKOUT';
+
+            const candles = candidate.stock.candles;
+            let trendIcon = <Minus className="w-3.5 h-3.5" />;
+            let trendColor = 'text-slate-400';
+            let trendText = 'Neutral';
+
+            if (candles && candles.length >= 8) {
+              const last7 = candles.slice(-7);
+              const prev7 = candles.slice(-8, -1);
+              const sma7 = last7.reduce((sum, c) => sum + c.close, 0) / 7;
+              const sma7Prev = prev7.reduce((sum, c) => sum + c.close, 0) / 7;
+
+              if (sma7 > sma7Prev) {
+                trendIcon = <TrendingUp className="w-3.5 h-3.5" />;
+                trendColor = 'text-emerald-400';
+                trendText = 'Up';
+              } else if (sma7 < sma7Prev) {
+                trendIcon = <TrendingDown className="w-3.5 h-3.5" />;
+                trendColor = 'text-rose-400';
+                trendText = 'Down';
+              }
+            }
+
+            return (
+              <div
+                key={candidate.symbol}
+                onClick={() => setSelectedCandidateModal(candidate)}
+                className={`bg-slate-900 rounded-2xl p-5 border transition-all hover:border-indigo-500/50 hover:shadow-indigo-950/40 shadow-lg space-y-4 flex flex-col justify-between cursor-pointer group ${
+                  isStrong
+                    ? 'border-emerald-500/50 bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950/20'
+                    : isWatch
+                    ? 'border-amber-500/40'
+                    : 'border-slate-800'
+                }`}
+              >
+                {/* Card Header */}
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-white font-mono text-base">{candidate.symbol}</h3>
+                        <span className="text-[10px] text-slate-400 font-mono">({candidate.sector})</span>
+                      </div>
+                      <div className="text-xs text-slate-400 line-clamp-1">{candidate.stockName}</div>
+                      <div className="text-[10px] text-slate-500 font-mono mt-0.5">Updated: <span className="text-slate-300">{candidate.latestDate}</span></div>
+                    </div>
+
+                    {/* Decision Status Badge */}
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold font-mono border shrink-0 ${
+                          isStrong
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : isWatch
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}
+                      >
+                        {isStrong ? '🟢 STRONG BUY' : isWatch ? '🟡 WATCHLIST' : '🔵 ACCUMULATE'}
+                      </span>
+
+                      {/* Post-Mortem Fail-Safe Tag */}
+                      {candidate.rvol20 >= 2.5 && candidate.priceIncreasePct <= 5.5 ? (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[9px] font-mono font-bold flex items-center gap-1">
+                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" /> 🛡️ Post-Mortem Safe
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[9px] font-mono font-bold flex items-center gap-1">
+                          <AlertCircle className="w-2.5 h-2.5 text-rose-400" /> ⚠️ Risk: {candidate.rvol20 < 2.5 ? 'Low RVOL' : 'Extended Candle'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
                 {/* Profit Potential Bar */}
                 <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
@@ -749,6 +1072,58 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
           );
         })}
       </div>
+      )}
+
+      {/* Pagination Bar */}
+      {filteredCandidates.length > 0 && itemsPerPage !== -1 && totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg">
+          <div className="text-xs text-slate-400 font-mono">
+            Page <span className="text-white font-bold">{currentPage}</span> of <span className="text-white font-bold">{totalPages}</span> ({filteredCandidates.length} total candidates)
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors font-mono"
+            >
+              <ChevronLeft className="w-4 h-4" /> Previous
+            </button>
+
+            {/* Page number buttons */}
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                let pageNum = i + 1;
+                if (totalPages > 7 && currentPage > 4) {
+                  pageNum = currentPage - 3 + i;
+                  if (pageNum > totalPages) pageNum = totalPages - (6 - i);
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-7 h-7 rounded-lg text-xs font-bold font-mono transition-all ${
+                      currentPage === pageNum
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors font-mono"
+            >
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Candidate Deep Analysis Modal */}
       {selectedCandidateModal && (

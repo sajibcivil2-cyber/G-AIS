@@ -24,6 +24,7 @@ interface BacktestSummaryDashboardProps {
   selectedSector: string;
   onJumpToSignal?: (signal: BreakoutSignal) => void;
   onOpenStrategyLab?: () => void;
+  onOpenStopLossDiagnostics?: () => void;
 }
 
 export const BacktestSummaryDashboard: React.FC<BacktestSummaryDashboardProps> = ({
@@ -33,6 +34,7 @@ export const BacktestSummaryDashboard: React.FC<BacktestSummaryDashboardProps> =
   selectedSector,
   onJumpToSignal,
   onOpenStrategyLab,
+  onOpenStopLossDiagnostics,
 }) => {
   const [showInfoModal, setShowInfoModal] = useState(false);
 
@@ -117,6 +119,16 @@ export const BacktestSummaryDashboard: React.FC<BacktestSummaryDashboardProps> =
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {onOpenStopLossDiagnostics && (
+            <button
+              onClick={onOpenStopLossDiagnostics}
+              className="px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900/80 text-rose-300 text-xs font-mono font-semibold transition-all border border-rose-500/40 flex items-center gap-1.5"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+              <span>Stop-Loss Post-Mortem</span>
+            </button>
+          )}
+
           {onOpenStrategyLab && (
             <button
               onClick={onOpenStrategyLab}

@@ -188,6 +188,32 @@ export interface BreakoutSignal {
   harmonicDetails?: HarmonicPatternDetails;
 }
 
+export type TradeRecord = BreakoutSignal;
+
+export interface StopLossFailurePattern {
+  id: string;
+  name: string;
+  category: 'Volume Exhaustion' | 'Extended Overbought' | 'Overhead Resistance' | 'Wide Volatile Base' | 'Low Turnover Liquidity' | 'Market Sector Drag';
+  count: number;
+  percentage: number;
+  avgLossPct: number;
+  keyIndicators: string[];
+  repetitionReasoning: string;
+  mitigationRule: string;
+  affectedSymbols: string[];
+}
+
+export interface StopLossPostMortemReport {
+  totalStopLossHits: number;
+  totalStopLossPct: number;
+  avgLossPct: number;
+  worstStopLossTrade: BreakoutSignal | null;
+  failurePatterns: StopLossFailurePattern[];
+  sectorFailureBreakdown: Array<{ sector: string; count: number; percentage: number }>;
+  patternFailureBreakdown: Array<{ pattern: string; count: number; percentage: number }>;
+  keyTakeaways: string[];
+}
+
 export interface BacktestSummary {
   totalSignals: number;
   winningSignals: number;
@@ -202,6 +228,7 @@ export interface BacktestSummary {
   bestTrade: BreakoutSignal | null;
   worstTrade: BreakoutSignal | null;
   signals: BreakoutSignal[];
+  stopLossReport?: StopLossPostMortemReport;
 }
 
 export type ScreenerDecisionStatus = 'STRONG_BUY' | 'EARLY_TREND_IGNITION' | 'WATCHLIST_BREAKOUT' | 'CONSOLIDATING_ACCUMULATION' | 'NEUTRAL';
