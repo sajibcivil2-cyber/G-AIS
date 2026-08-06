@@ -484,6 +484,7 @@ export const DseVolumeBreakoutChart: React.FC<DseVolumeBreakoutChartProps> = ({
                     { id: 'Ascending Triangle', label: 'Triangle', icon: '🔺' },
                     { id: 'VCP Compression', label: 'VCP Coil', icon: '⚡' },
                     { id: 'Harmonic Pattern (C-to-D)', label: 'Harmonic C-to-D', icon: '💎' },
+                    { id: 'Harmonic Pattern (D-Reversal)', label: 'Harmonic D-Reversal', icon: '🎯' },
                     { id: 'Volume Surge', label: 'Vol Surge', icon: '⚡' },
                   ].map((p) => (
                     <button
@@ -929,11 +930,13 @@ const D3ChartCanvas: React.FC<D3ChartCanvasProps> = React.memo(({
         const xCoordA = getXCoord(harmonic.aDate);
         const xCoordB = getXCoord(harmonic.bDate);
         const xCoordC = getXCoord(harmonic.cDate);
+        const xCoordD = harmonic.dDate ? getXCoord(harmonic.dDate) : null;
 
         const yCoordX = yScalePrice(harmonic.xPrice);
         const yCoordA = yScalePrice(harmonic.aPrice);
         const yCoordB = yScalePrice(harmonic.bPrice);
         const yCoordC = yScalePrice(harmonic.cPrice);
+        const yCoordD = harmonic.dPrice !== undefined ? yScalePrice(harmonic.dPrice) : null;
 
         // Define Points Array
         const hPoints = [
@@ -942,6 +945,9 @@ const D3ChartCanvas: React.FC<D3ChartCanvasProps> = React.memo(({
           { name: 'B', x: xCoordB, y: yCoordB, price: harmonic.bPrice },
           { name: 'C', x: xCoordC, y: yCoordC, price: harmonic.cPrice },
         ];
+        if (xCoordD !== null && yCoordD !== null) {
+          hPoints.push({ name: 'D', x: xCoordD, y: yCoordD, price: harmonic.dPrice! });
+        }
 
         // Draw solid X-A-B-C-D pattern skeleton
         // First draw completed legs (X-A, A-B, B-C)
@@ -972,14 +978,24 @@ const D3ChartCanvas: React.FC<D3ChartCanvasProps> = React.memo(({
               .attr('stroke-dasharray', '2,2')
               .attr('opacity', 0.6);
           }
+          if (xCoordB !== null && xCoordC !== null && xCoordD !== null) {
+            g.append('polygon')
+              .attr('points', `${xCoordB},${yCoordB} ${xCoordC},${yCoordC} ${xCoordD},${yCoordD}`)
+              .attr('fill', 'rgba(99, 102, 241, 0.1)')
+              .attr('stroke', '#6366f1')
+              .attr('stroke-width', 1)
+              .attr('stroke-dasharray', '2,2')
+              .attr('opacity', 0.6);
+          }
         }
 
-        if (xCoordC !== null) {
-          // Draw a clean horizontal target line for Point D (the main price target)
+        const lastPointCoord = xCoordD !== null ? xCoordD : xCoordC;
+        if (lastPointCoord !== null) {
+          // Draw a clean horizontal target line for the main price target
           const yTargetD = yScalePrice(harmonic.dTargetPrice);
           if (yTargetD >= 0 && yTargetD <= priceHeight) {
             g.append('line')
-              .attr('x1', xCoordC)
+              .attr('x1', lastPointCoord)
               .attr('y1', yTargetD)
               .attr('x2', chartWidth)
               .attr('y2', yTargetD)

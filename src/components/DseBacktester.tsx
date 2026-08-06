@@ -107,8 +107,14 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
   useEffect(() => {
     async function restoreSavedDatabase() {
       try {
-        const savedStocks = await loadDatabaseFromStorage();
-        if (savedStocks && savedStocks.length > 0) {
+        const loadResult = await loadDatabaseFromStorage();
+        if (loadResult && loadResult.stocks.length > 0) {
+          const { stocks: savedStocks, repairedSymbols, droppedSymbols } = loadResult;
+          
+          if (repairedSymbols.length > 0 || droppedSymbols.length > 0) {
+            setDataQualityNotice(`Database verification complete. Automatically repaired ${repairedSymbols.length} corrupted ticker(s). Dropped ${droppedSymbols.length} unrecoverable ticker(s).`);
+            setTimeout(() => setDataQualityNotice(null), 10000);
+          }
           const stockMap = new Map<string, DseStockData>();
 
           // Only merge with sample stocks if the saved database is small (e.g. not a full market bulk upload)

@@ -362,367 +362,164 @@ export function detectHarmonicPattern(
   candles: DseStockCandle[],
   breakoutIdx?: number
 ): HarmonicPatternDetails | null {
-  if (!candles || candles.length < 20) return null;
+  if (!candles || candles.length < 25) return null;
 
   const idx = breakoutIdx !== undefined && breakoutIdx < candles.length ? breakoutIdx : candles.length - 1;
-  const lookbackStart = Math.max(0, idx - 45);
+  const lookbackStart = Math.max(0, idx - 60);
   const subset = candles.slice(lookbackStart, idx + 1);
   const len = subset.length;
-  if (len < 16) return null;
+  if (len < 20) return null;
 
-  // Segment subset into 4 regions for X, A, B, C
-  const quarter = Math.floor(len / 4);
-  const seg1 = subset.slice(0, quarter + 2); // X region
-  const seg2 = subset.slice(quarter - 1, 2 * quarter + 2); // A region
-  const seg3 = subset.slice(2 * quarter - 1, 3 * quarter + 2); // B region
-  const seg4 = subset.slice(3 * quarter - 1); // C region
+  // Let's divide into 5 segments to allow for X, A, B, C, D
+  const segLength = Math.floor(len / 5);
+  const seg1 = subset.slice(0, segLength + 2); // X region
+  const seg2 = subset.slice(segLength - 1, 2 * segLength + 2); // A region
+  const seg3 = subset.slice(2 * segLength - 1, 3 * segLength + 2); // B region
+  const seg4 = subset.slice(3 * segLength - 1, 4 * segLength + 2); // C region
+  const seg5 = subset.slice(4 * segLength - 1); // D region (or current)
 
-  // Let's store potential results for standard and inverse patterns
-  let standardPattern: HarmonicPatternDetails | null = null;
-  let inversePattern: HarmonicPatternDetails | null = null;
+  // Helper to find min/max
+  const findMin = (arr: DseStockCandle[], offset: number) => {
+    let min = Infinity, relIdx = 0;
+    arr.forEach((c, i) => { if (c.low < min) { min = c.low; relIdx = i; } });
+    return { val: min, idx: offset + relIdx, candle: arr[relIdx] };
+  };
+  const findMax = (arr: DseStockCandle[], offset: number) => {
+    let max = -Infinity, relIdx = 0;
+    arr.forEach((c, i) => { if (c.high > max) { max = c.high; relIdx = i; } });
+    return { val: max, idx: offset + relIdx, candle: arr[relIdx] };
+  };
 
   // ==========================================
-  // 1. ATTEMPT DETECTING STANDARD PATTERN (W-shape)
+  // 1. Bearish Harmonic (W-shape) - Trading C -> D
   // ==========================================
-  // X Point: Lowest price in seg1
-  let minXVal = Infinity;
-  let xRelIdx = 0;
-  seg1.forEach((c, i) => {
-    if (c.low < minXVal) {
-      minXVal = c.low;
-      xRelIdx = i;
-    }
-  });
-  const xIdx = lookbackStart + xRelIdx;
-  const xCandle = candles[xIdx];
+  // X(High), A(Low), B(High), C(Low)
+  const xBear = findMax(seg1, lookbackStart);
+  const aBear = findMin(seg2, lookbackStart + segLength - 1);
+  const bBear = findMax(seg3, lookbackStart + 2 * segLength - 1);
+  const cBear = findMin(subset.slice(3 * segLength - 1), lookbackStart + 3 * segLength - 1); // C can be anywhere in the last part
 
-  // A Point: Highest price in seg2 after X
-  let maxAVal = -Infinity;
-  let aRelIdx = 0;
-  seg2.forEach((c, i) => {
-    if (c.high > maxAVal) {
-      maxAVal = c.high;
-      aRelIdx = i;
-    }
-  });
-  const aIdx = lookbackStart + (quarter - 1) + aRelIdx;
-  const aCandle = candles[aIdx];
+  if (xBear.idx < aBear.idx && aBear.idx < bBear.idx && bBear.idx < cBear.idx) {
+    const xaMove = xBear.val - aBear.val;
+    const abMove = bBear.val - aBear.val;
+    const bcMove = bBear.val - cBear.val;
 
-  // B Point: Local low in seg3 (retracement of XA leg)
-  let minBVal = Infinity;
-  let bRelIdx = 0;
-  seg3.forEach((c, i) => {
-    if (c.low < minBVal) {
-      minBVal = c.low;
-      bRelIdx = i;
-    }
-  });
-  const bIdx = lookbackStart + (2 * quarter - 1) + bRelIdx;
-  const bCandle = candles[bIdx];
+    if (xaMove > 0 && abMove > 0 && bcMove > 0 && bBear.val < xBear.val && cBear.val > aBear.val) {
+      const abXaRatio = Number((abMove / xaMove).toFixed(3));
+      const bcAbRatio = Number((bcMove / abMove).toFixed(3));
 
-  // C Point: Local high/bounce in seg4 (retracement of AB leg)
-  let maxCVal = -Infinity;
-  let cRelIdx = 0;
-  seg4.forEach((c, i) => {
-    if (c.close > maxCVal) {
-      maxCVal = c.close;
-      cRelIdx = i;
-    }
-  });
-  const cIdx = lookbackStart + (3 * quarter - 1) + cRelIdx;
-  const cCandle = candles[cIdx];
-
-  if (xCandle && aCandle && bCandle && cCandle) {
-    const xPrice = xCandle.low;
-    const aPrice = aCandle.high;
-    const bPrice = bCandle.low;
-    const cPrice = cCandle.close;
-
-    // Validate structural hierarchy: X < A, B < A, B > X, C < A, C > B
-    const xaMove = aPrice - xPrice;
-    const abMove = aPrice - bPrice;
-    const bcMove = cPrice - bPrice;
-
-    if (xaMove > 0 && abMove > 0 && bcMove > 0 && xPrice < aPrice && bPrice < aPrice && bPrice > xPrice && cPrice < aPrice && cPrice > bPrice) {
-      // Calculate Fibonacci Ratios
-      const abXaRatio = Number((abMove / xaMove).toFixed(3)); // Retracement of XA
-      const bcAbRatio = Number((bcMove / abMove).toFixed(3)); // Retracement of AB
-
-      // Validate standard Harmonic Fibonacci limits
       if (abXaRatio >= 0.25 && abXaRatio <= 0.88 && bcAbRatio >= 0.25 && bcAbRatio <= 0.95) {
-        // Determine Subtype based on Fib ratios
-        let subtype: HarmonicPatternDetails['subtype'] = 'Bullish Gartley';
+        let subtype = 'Bearish Gartley (C-D Trade)';
         let cdBcMultiplier = 1.272;
 
-        if (abXaRatio >= 0.55 && abXaRatio <= 0.68) {
-          subtype = 'Bullish Gartley';
-          cdBcMultiplier = 1.272;
-        } else if (abXaRatio < 0.55) {
-          subtype = 'Bullish Bat';
-          cdBcMultiplier = 1.618;
-        } else if (abXaRatio >= 0.70 && abXaRatio <= 0.82) {
-          subtype = 'Bullish Butterfly';
-          cdBcMultiplier = 1.414;
-        } else {
-          subtype = 'Bullish Crab';
-          cdBcMultiplier = 2.000;
-        }
+        if (abXaRatio >= 0.55 && abXaRatio <= 0.68) { subtype = 'Bearish Gartley'; cdBcMultiplier = 1.272; }
+        else if (abXaRatio < 0.55) { subtype = 'Bearish Bat'; cdBcMultiplier = 1.618; }
+        else if (abXaRatio >= 0.70 && abXaRatio <= 0.82) { subtype = 'Bearish Butterfly'; cdBcMultiplier = 1.414; }
+        else { subtype = 'Bearish Crab'; cdBcMultiplier = 2.000; }
 
-        const cdBcRatio = cdBcMultiplier;
-        const dTargetPrice = Number((cPrice + bcMove * cdBcMultiplier).toFixed(2));
-        const cdSpan = dTargetPrice - cPrice;
-        const t1Price = Number((cPrice + cdSpan * 0.382).toFixed(2));
-        const t2Price = Number((cPrice + cdSpan * 0.618).toFixed(2));
-        const stopLossPrice = Number((Math.min(bPrice, cPrice) * 0.965).toFixed(2));
+        const entryPrice = cBear.val;
+        const dTargetPrice = Number((entryPrice + bcMove * cdBcMultiplier).toFixed(2));
+        const cdSpan = dTargetPrice - entryPrice;
+        const t1Price = Number((entryPrice + cdSpan * 0.382).toFixed(2));
+        const t2Price = Number((entryPrice + cdSpan * 0.618).toFixed(2));
+        const stopLossPrice = Number((Math.min(aBear.val, entryPrice) * 0.965).toFixed(2));
 
-        const potentialGainPct = Number((((dTargetPrice - cPrice) / cPrice) * 100).toFixed(2));
-        const t1GainPct = Number((((t1Price - cPrice) / cPrice) * 100).toFixed(2));
-        const t2GainPct = Number((((t2Price - cPrice) / cPrice) * 100).toFixed(2));
-        const potentialRiskPct = Number((((cPrice - stopLossPrice) / cPrice) * 100).toFixed(2));
+        const potentialGainPct = Number((((dTargetPrice - entryPrice) / entryPrice) * 100).toFixed(2));
+        const t1GainPct = Number((((t1Price - entryPrice) / entryPrice) * 100).toFixed(2));
+        const t2GainPct = Number((((t2Price - entryPrice) / entryPrice) * 100).toFixed(2));
+        const potentialRiskPct = Number((((entryPrice - stopLossPrice) / entryPrice) * 100).toFixed(2));
         const riskRewardRatio = Number((potentialGainPct / (potentialRiskPct || 1)).toFixed(2));
 
         const cdPathLevels = [
-          {
-            levelName: 'Point C (Entry)',
-            fibRatio: '0.000',
-            price: cPrice,
-            gainPct: 0.0,
-            description: 'Primary swing entry trigger upon C-point completion bounce',
-          },
-          {
-            levelName: 'Target 1 (Conservative)',
-            fibRatio: '0.382 C-D',
-            price: t1Price,
-            gainPct: t1GainPct,
-            description: 'First partial profit take-profit level (38.2% C-D path completion)',
-          },
-          {
-            levelName: 'Target 2 (Main Swing)',
-            fibRatio: '0.618 C-D',
-            price: t2Price,
-            gainPct: t2GainPct,
-            description: 'Secondary target level (61.8% Golden Ratio C-D expansion)',
-          },
-          {
-            levelName: 'Point D Target (PRZ Exit)',
-            fibRatio: '1.000 PRZ',
-            price: dTargetPrice,
-            gainPct: potentialGainPct,
-            description: `Final PRZ exit target (${cdBcMultiplier}x BC extension)`,
-          },
-          {
-            levelName: 'Invalidation Stop Loss',
-            fibRatio: 'Stop-Loss',
-            price: stopLossPrice,
-            gainPct: -potentialRiskPct,
-            description: 'Hard stop loss positioned below Point C/B swing lows',
-          },
+          { levelName: 'Point C (Entry)', fibRatio: '0.000', price: entryPrice, gainPct: 0.0, description: 'Primary C-point completion bounce' },
+          { levelName: 'Target 1', fibRatio: '0.382 C-D', price: t1Price, gainPct: t1GainPct, description: 'First partial profit' },
+          { levelName: 'Target 2', fibRatio: '0.618 C-D', price: t2Price, gainPct: t2GainPct, description: 'Secondary target' },
+          { levelName: 'Point D Target', fibRatio: '1.000 PRZ', price: dTargetPrice, gainPct: potentialGainPct, description: 'Final PRZ exit target' },
+          { levelName: 'Stop Loss', fibRatio: 'Stop-Loss', price: stopLossPrice, gainPct: -potentialRiskPct, description: 'Hard stop loss' }
         ];
 
-        standardPattern = {
+        return {
           subtype,
-          xPrice,
-          xDate: xCandle.date,
-          xIdx,
-          aPrice,
-          aDate: aCandle.date,
-          aIdx,
-          bPrice,
-          bDate: bCandle.date,
-          bIdx,
-          cPrice,
-          cDate: cCandle.date,
-          cIdx,
-          dTargetPrice,
-          t1Price,
-          t2Price,
-          stopLossPrice,
-          abXaRatio,
-          bcAbRatio,
-          cdBcRatio,
-          potentialGainPct,
-          potentialRiskPct,
-          riskRewardRatio,
-          cdPathLevels,
+          patternType: 'BEARISH_C_TO_D',
+          xPrice: xBear.val, xDate: xBear.candle.date, xIdx: xBear.idx,
+          aPrice: aBear.val, aDate: aBear.candle.date, aIdx: aBear.idx,
+          bPrice: bBear.val, bDate: bBear.candle.date, bIdx: bBear.idx,
+          cPrice: cBear.val, cDate: cBear.candle.date, cIdx: cBear.idx,
+          dTargetPrice, entryPrice, t1Price, t2Price, stopLossPrice,
+          abXaRatio, bcAbRatio, cdBcRatio: cdBcMultiplier,
+          potentialGainPct, potentialRiskPct, riskRewardRatio, cdPathLevels
         };
       }
     }
   }
 
   // ==========================================
-  // 2. ATTEMPT DETECTING INVERSE PATTERN (M-shape)
+  // 2. Bullish Harmonic (M-shape) - Trading D Reversal
   // ==========================================
-  // X: High in seg1
-  let maxXValInv = -Infinity;
-  let xRelIdxInv = 0;
-  seg1.forEach((c, i) => {
-    if (c.high > maxXValInv) {
-      maxXValInv = c.high;
-      xRelIdxInv = i;
-    }
-  });
-  const xIdxInv = lookbackStart + xRelIdxInv;
-  const xCandleInv = candles[xIdxInv];
+  // X(Low), A(High), B(Low), C(High), D(Low)
+  const xBull = findMin(seg1, lookbackStart);
+  const aBull = findMax(seg2, lookbackStart + segLength - 1);
+  const bBull = findMin(seg3, lookbackStart + 2 * segLength - 1);
+  const cBull = findMax(seg4, lookbackStart + 3 * segLength - 1);
+  const dbull = findMin(seg5, lookbackStart + 4 * segLength - 1);
 
-  // A: Low in seg2
-  let minAValInv = Infinity;
-  let aRelIdxInv = 0;
-  seg2.forEach((c, i) => {
-    if (c.low < minAValInv) {
-      minAValInv = c.low;
-      aRelIdxInv = i;
-    }
-  });
-  const aIdxInv = lookbackStart + (quarter - 1) + aRelIdxInv;
-  const aCandleInv = candles[aIdxInv];
+  if (xBull.idx < aBull.idx && aBull.idx < bBull.idx && bBull.idx < cBull.idx && cBull.idx < dbull.idx) {
+    const xaMove = aBull.val - xBull.val;
+    const abMove = aBull.val - bBull.val;
+    const bcMove = cBull.val - bBull.val;
+    const cdMove = cBull.val - dbull.val;
 
-  // B: High in seg3
-  let maxBValInv = -Infinity;
-  let bRelIdxInv = 0;
-  seg3.forEach((c, i) => {
-    if (c.high > maxBValInv) {
-      maxBValInv = c.high;
-      bRelIdxInv = i;
-    }
-  });
-  const bIdxInv = lookbackStart + (2 * quarter - 1) + bRelIdxInv;
-  const bCandleInv = candles[bIdxInv];
+    if (xaMove > 0 && abMove > 0 && bcMove > 0 && cdMove > 0 && bBull.val > xBull.val && cBull.val < aBull.val) {
+      const abXaRatio = Number((abMove / xaMove).toFixed(3));
+      const bcAbRatio = Number((bcMove / abMove).toFixed(3));
+      const cdBcRatio = Number((cdMove / bcMove).toFixed(3));
 
-  // C: Low in seg4
-  let minCValInv = Infinity;
-  let cRelIdxInv = 0;
-  seg4.forEach((c, i) => {
-    if (c.close < minCValInv) {
-      minCValInv = c.close;
-      cRelIdxInv = i;
-    }
-  });
-  const cIdxInv = lookbackStart + (3 * quarter - 1) + cRelIdxInv;
-  const cCandleInv = candles[cIdxInv];
+      if (abXaRatio >= 0.25 && abXaRatio <= 0.88 && bcAbRatio >= 0.25 && bcAbRatio <= 0.95 && cdBcRatio >= 1.13) {
+        let subtype = 'Bullish Gartley';
+        if (abXaRatio < 0.55) subtype = 'Bullish Bat';
+        else if (abXaRatio >= 0.70 && abXaRatio <= 0.82) subtype = 'Bullish Butterfly';
+        else if (abXaRatio > 0.82) subtype = 'Bullish Crab';
 
-  if (xCandleInv && aCandleInv && bCandleInv && cCandleInv) {
-    const xPrice = xCandleInv.high;
-    const aPrice = aCandleInv.low;
-    const bPrice = bCandleInv.high;
-    const cPrice = cCandleInv.close;
+        const entryPrice = dbull.val;
+        const dTargetPrice = cBull.val; // First major target is C
+        const cdSpan = cBull.val - dbull.val;
+        const adSpan = aBull.val - dbull.val;
+        const t1Price = Number((entryPrice + cdSpan * 0.382).toFixed(2));
+        const t2Price = Number((entryPrice + adSpan * 0.618).toFixed(2));
+        const stopLossPrice = Number((entryPrice * 0.965).toFixed(2));
 
-    // Validate structural hierarchy: X > A, B > A, B < X, C > A, C < B
-    const xaMove = xPrice - aPrice; // Downward move
-    const abMove = bPrice - aPrice; // Upward move
-    const bcMove = bPrice - cPrice; // Downward move
-
-    if (xaMove > 0 && abMove > 0 && bcMove > 0 && xPrice > aPrice && bPrice > aPrice && bPrice < xPrice && cPrice > aPrice && cPrice < bPrice) {
-      // Calculate Fibonacci Ratios
-      const abXaRatio = Number((abMove / xaMove).toFixed(3)); // Retracement of XA
-      const bcAbRatio = Number((bcMove / abMove).toFixed(3)); // Retracement of AB
-
-      if (abXaRatio >= 0.25 && abXaRatio <= 0.88 && bcAbRatio >= 0.25 && bcAbRatio <= 0.95) {
-        // Determine Subtype based on Fib ratios
-        let subtype: HarmonicPatternDetails['subtype'] = 'Inverse Bullish Gartley';
-        let cdBcMultiplier = 1.272;
-
-        if (abXaRatio >= 0.55 && abXaRatio <= 0.68) {
-          subtype = 'Inverse Bullish Gartley';
-          cdBcMultiplier = 1.272;
-        } else if (abXaRatio < 0.55) {
-          subtype = 'Inverse Bullish Bat';
-          cdBcMultiplier = 1.618;
-        } else if (abXaRatio >= 0.70 && abXaRatio <= 0.82) {
-          subtype = 'Inverse Bullish Butterfly';
-          cdBcMultiplier = 1.414;
-        } else {
-          subtype = 'Inverse Bullish Crab';
-          cdBcMultiplier = 2.000;
-        }
-
-        const cdBcRatio = cdBcMultiplier;
-        // Projected target price for Point D is HIGHER than Point C because it's a bullish entry pattern
-        const dTargetPrice = Number((cPrice + bcMove * cdBcMultiplier).toFixed(2));
-        const cdSpan = dTargetPrice - cPrice;
-        const t1Price = Number((cPrice + cdSpan * 0.382).toFixed(2));
-        const t2Price = Number((cPrice + cdSpan * 0.618).toFixed(2));
-        // For inverse bullish, C is a local low, so hard stop loss is below Point C
-        const stopLossPrice = Number((cPrice * 0.965).toFixed(2));
-
-        const potentialGainPct = Number((((dTargetPrice - cPrice) / cPrice) * 100).toFixed(2));
-        const t1GainPct = Number((((t1Price - cPrice) / cPrice) * 100).toFixed(2));
-        const t2GainPct = Number((((t2Price - cPrice) / cPrice) * 100).toFixed(2));
-        const potentialRiskPct = Number((((cPrice - stopLossPrice) / cPrice) * 100).toFixed(2));
+        const potentialGainPct = Number((((dTargetPrice - entryPrice) / entryPrice) * 100).toFixed(2));
+        const t1GainPct = Number((((t1Price - entryPrice) / entryPrice) * 100).toFixed(2));
+        const t2GainPct = Number((((t2Price - entryPrice) / entryPrice) * 100).toFixed(2));
+        const potentialRiskPct = Number((((entryPrice - stopLossPrice) / entryPrice) * 100).toFixed(2));
         const riskRewardRatio = Number((potentialGainPct / (potentialRiskPct || 1)).toFixed(2));
 
         const cdPathLevels = [
-          {
-            levelName: 'Point C (Entry)',
-            fibRatio: '0.000',
-            price: cPrice,
-            gainPct: 0.0,
-            description: 'Primary swing entry trigger upon C-point completion bounce',
-          },
-          {
-            levelName: 'Target 1 (Conservative)',
-            fibRatio: '0.382 C-D',
-            price: t1Price,
-            gainPct: t1GainPct,
-            description: 'First partial profit take-profit level (38.2% C-D path completion)',
-          },
-          {
-            levelName: 'Target 2 (Main Swing)',
-            fibRatio: '0.618 C-D',
-            price: t2Price,
-            gainPct: t2GainPct,
-            description: 'Secondary target level (61.8% Golden Ratio C-D expansion)',
-          },
-          {
-            levelName: 'Point D Target (PRZ Exit)',
-            fibRatio: '1.000 PRZ',
-            price: dTargetPrice,
-            gainPct: potentialGainPct,
-            description: `Final PRZ exit target (${cdBcMultiplier}x BC extension)`,
-          },
-          {
-            levelName: 'Invalidation Stop Loss',
-            fibRatio: 'Stop-Loss',
-            price: stopLossPrice,
-            gainPct: -potentialRiskPct,
-            description: 'Hard stop loss positioned below Point C/B swing lows',
-          },
+          { levelName: 'Point D (PRZ Entry)', fibRatio: '0.000', price: entryPrice, gainPct: 0.0, description: 'Reversal entry at PRZ' },
+          { levelName: 'Target 1', fibRatio: '0.382 C-D', price: t1Price, gainPct: t1GainPct, description: 'First partial profit' },
+          { levelName: 'Target 2', fibRatio: '0.618 A-D', price: t2Price, gainPct: t2GainPct, description: 'Secondary target' },
+          { levelName: 'Point C Target', fibRatio: '1.000 C-D', price: dTargetPrice, gainPct: potentialGainPct, description: 'Major resistance target' },
+          { levelName: 'Stop Loss', fibRatio: 'Stop-Loss', price: stopLossPrice, gainPct: -potentialRiskPct, description: 'Hard stop loss' }
         ];
 
-        inversePattern = {
+        return {
           subtype,
-          xPrice,
-          xDate: xCandleInv.date,
-          xIdx: xIdxInv,
-          aPrice,
-          aDate: aCandleInv.date,
-          aIdx: aIdxInv,
-          bPrice,
-          bDate: bCandleInv.date,
-          bIdx: bIdxInv,
-          cPrice,
-          cDate: cCandleInv.date,
-          cIdx: cIdxInv,
-          dTargetPrice,
-          t1Price,
-          t2Price,
-          stopLossPrice,
-          abXaRatio,
-          bcAbRatio,
-          cdBcRatio,
-          potentialGainPct,
-          potentialRiskPct,
-          riskRewardRatio,
-          cdPathLevels,
+          patternType: 'BULLISH_D_REVERSAL',
+          xPrice: xBull.val, xDate: xBull.candle.date, xIdx: xBull.idx,
+          aPrice: aBull.val, aDate: aBull.candle.date, aIdx: aBull.idx,
+          bPrice: bBull.val, bDate: bBull.candle.date, bIdx: bBull.idx,
+          cPrice: cBull.val, cDate: cBull.candle.date, cIdx: cBull.idx,
+          dPrice: dbull.val, dDate: dbull.candle.date, dIdx: dbull.idx,
+          dTargetPrice, entryPrice, t1Price, t2Price, stopLossPrice,
+          abXaRatio, bcAbRatio, cdBcRatio,
+          potentialGainPct, potentialRiskPct, riskRewardRatio, cdPathLevels
         };
       }
     }
   }
 
-  // Return only standard pattern (W-shape) as requested for long-only Bangladesh market
-  return standardPattern;
+  return null;
 }
-
-// Technical Pattern Detection Helper (Bullish Flag, Double Bottom, Cup & Handle, Ascending Triangle, VCP Compression, Harmonic C-to-D, Box Range)
 export function detectTechnicalPattern(
   candles: DseStockCandle[],
   breakoutIdx: number
@@ -739,14 +536,22 @@ export function detectTechnicalPattern(
     };
   }
 
-  // 0. Check Harmonic Pattern (C Point Entry to D Point Exit)
+  // 0. Check Harmonic Pattern
   const harmonic = detectHarmonicPattern(candles, breakoutIdx);
   if (harmonic && harmonic.potentialGainPct >= 6.0) {
-    return {
-      detectedPattern: 'Harmonic Pattern (C-to-D)',
-      patternConfidence: 95,
-      patternDescription: `${harmonic.subtype} Harmonic Pattern: C-Point Entry at ৳${harmonic.cPrice.toFixed(2)} ➔ Target D-Point Exit at ৳${harmonic.dTargetPrice.toFixed(2)} (${harmonic.potentialGainPct}% Gain, R:R ${harmonic.riskRewardRatio}:1).`,
-    };
+    if (harmonic.patternType === 'BEARISH_C_TO_D') {
+      return {
+        detectedPattern: 'Harmonic Pattern (C-to-D)' as any,
+        patternConfidence: 95,
+        patternDescription: `${harmonic.subtype} Pattern: C-Point Entry at ৳${harmonic.entryPrice.toFixed(2)} ➔ Target D-Point Exit at ৳${harmonic.dTargetPrice.toFixed(2)} (${harmonic.potentialGainPct}% Gain, R:R ${harmonic.riskRewardRatio}:1).`,
+      };
+    } else {
+      return {
+        detectedPattern: 'Harmonic Pattern (D-Reversal)' as any,
+        patternConfidence: 95,
+        patternDescription: `${harmonic.subtype} Pattern: D-Point Reversal Entry at ৳${harmonic.entryPrice.toFixed(2)} ➔ Target Exit at ৳${harmonic.dTargetPrice.toFixed(2)} (${harmonic.potentialGainPct}% Gain, R:R ${harmonic.riskRewardRatio}:1).`,
+      };
+    }
   }
 
   const lookbackStart = Math.max(0, breakoutIdx - 35);
@@ -2088,7 +1893,9 @@ export function filterActiveStocks(stocks: DseStockData[]): DseStockData[] {
       symbolUpper.includes('-OTC') ||
       nameUpper.includes('BOND') ||
       nameUpper.includes('MUTUAL FUND') ||
-      nameUpper.includes('YOUSUF')
+      nameUpper.includes('YOUSUF') ||
+      (s.sector && s.sector.toUpperCase().includes('MUTUAL FUND')) ||
+      (s.sector && s.sector.toUpperCase().includes('CORPORATE BOND'))
     ) {
       return false;
     }

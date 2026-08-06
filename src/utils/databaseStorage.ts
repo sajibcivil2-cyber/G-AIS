@@ -204,7 +204,13 @@ export async function saveDatabaseToStorage(stocks: DseStockData[]): Promise<{ s
 
 // Load stock dataset from IndexedDB & localStorage fallback.
 // Corrupted candles/stocks are repaired in place instead of wiping the entire cache.
-export async function loadDatabaseFromStorage(): Promise<DseStockData[] | null> {
+export interface LoadDatabaseResult {
+  stocks: DseStockData[];
+  repairedSymbols: string[];
+  droppedSymbols: string[];
+}
+
+export async function loadDatabaseFromStorage(): Promise<LoadDatabaseResult | null> {
   try {
     // Try loading from IndexedDB
     try {
@@ -247,7 +253,7 @@ export async function loadDatabaseFromStorage(): Promise<DseStockData[] | null> 
         }
 
         if (cleanStocks.length > 0) {
-          return cleanStocks;
+          return { stocks: cleanStocks, repairedSymbols, droppedSymbols };
         }
         // Every stock was unrecoverable — fall through to localStorage/defaults.
       }
@@ -260,9 +266,9 @@ export async function loadDatabaseFromStorage(): Promise<DseStockData[] | null> 
     if (jsonStr) {
       const parsed = JSON.parse(jsonStr);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const { stocks: cleanStocks } = validateAndRepairDatabase(parsed as DseStockData[]);
+        const { stocks: cleanStocks, repairedSymbols, droppedSymbols } = validateAndRepairDatabase(parsed as DseStockData[]);
         if (cleanStocks.length > 0) {
-          return cleanStocks;
+          return { stocks: cleanStocks, repairedSymbols, droppedSymbols };
         }
       }
     }

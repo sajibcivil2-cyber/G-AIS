@@ -1,4 +1,4 @@
-export type IssueSeverity = 'High' | 'Medium' | 'Low';
+export type IssueSeverity = 'Critical' | 'High' | 'Medium' | 'Low';
 
 export type IssueCategory =
   | 'Architecture'
@@ -85,7 +85,8 @@ export interface HarmonicPathLevel {
 }
 
 export interface HarmonicPatternDetails {
-  subtype: 'Bullish Gartley' | 'Bullish Bat' | 'Bullish Butterfly' | 'Bullish Crab' | 'Inverse Bullish Gartley' | 'Inverse Bullish Bat' | 'Inverse Bullish Butterfly' | 'Inverse Bullish Crab';
+  subtype: string;
+  patternType: 'BEARISH_C_TO_D' | 'BULLISH_D_REVERSAL';
   xPrice: number;
   xDate: string;
   xIdx: number;
@@ -95,17 +96,20 @@ export interface HarmonicPatternDetails {
   bPrice: number;
   bDate: string;
   bIdx: number;
-  cPrice: number; // Point C (Entry Price)
+  cPrice: number;
   cDate: string;
   cIdx: number;
-  dTargetPrice: number; // Point D (Exit Target Price - 1.000 PRZ)
+  dPrice?: number;
   dDate?: string;
-  t1Price: number; // 0.382 Fib Target along C-D
-  t2Price: number; // 0.618 Fib Target along C-D
+  dIdx?: number;
+  dTargetPrice: number;
+  entryPrice: number;
+  t1Price: number; 
+  t2Price: number; 
   stopLossPrice: number;
-  abXaRatio: number; // Fib ratio B of XA
-  bcAbRatio: number; // Fib ratio C of AB
-  cdBcRatio: number; // Fib ratio D of BC
+  abXaRatio: number; 
+  bcAbRatio: number; 
+  cdBcRatio: number; 
   potentialGainPct: number;
   potentialRiskPct: number;
   riskRewardRatio: number;
@@ -130,6 +134,7 @@ export type TechnicalPatternType =
   | 'Ascending Triangle'
   | 'VCP Compression'
   | 'Harmonic Pattern (C-to-D)'
+  | 'Harmonic Pattern (D-Reversal)'
   | 'Box Range Consolidation'
   | 'Inverse Head & Shoulders'
   | 'Falling Wedge Breakout'
