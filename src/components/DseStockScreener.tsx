@@ -87,9 +87,10 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
           // Rule 1: Volume Exhaustion Trap (RVOL < 2.5x)
           if (c.rvol20 < 2.5) return false;
           // Rule 2: Extended Single Day Candle Chasing (> 5.5% single candle)
-          if (c.priceIncreasePct > 5.5) return false;
+          const priceIncreasePct = c.stock.candles.length > 1 ? ((c.latestClose - c.stock.candles[c.stock.candles.length - 2].close) / (c.stock.candles[c.stock.candles.length - 2].close || 1)) * 100 : 0;
+          if (priceIncreasePct > 5.5) return false;
           // Rule 3: Thin Liquidity Drag (< 15M BDT daily turnover)
-          if (c.avgVolume20 * c.currentPrice < 15000000) return false;
+          if (c.avgVolume20 * c.latestClose < 15000000) return false;
         }
 
         if (config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
@@ -961,7 +962,7 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
                       </span>
 
                       {/* Post-Mortem Fail-Safe Tag */}
-                      {candidate.rvol20 >= 2.5 && candidate.priceIncreasePct <= 5.5 ? (
+                      {candidate.rvol20 >= 2.5 && (candidate.stock.candles.length > 1 ? ((candidate.latestClose - candidate.stock.candles[candidate.stock.candles.length - 2].close) / (candidate.stock.candles[candidate.stock.candles.length - 2].close || 1)) * 100 : 0) <= 5.5 ? (
                         <span className="px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[9px] font-mono font-bold flex items-center gap-1">
                           <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" /> 🛡️ Post-Mortem Safe
                         </span>
