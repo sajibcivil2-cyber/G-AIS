@@ -30,7 +30,7 @@ import {
   Plus,
   Upload
 } from 'lucide-react';
-import { DseStockData, DseStockCandle, BacktestConfig, BacktestSummary, BreakoutSignal, ExtractedFile } from '../types';
+import { DseStockData, DseStockCandle, BacktestConfig, BacktestSummary, BreakoutSignal, ExtractedFile, SectorMomentumStat } from '../types';
 import {
   DSE_SAMPLE_STOCKS,
   runDseVolumeBreakoutBacktest,
@@ -42,7 +42,8 @@ import {
   filterActiveStocks,
   evaluateStockForScreener,
   calculateEdgeStats,
-  computeEquityCurve
+  computeEquityCurve,
+  computeSectorMomentum
 } from '../utils/dseBacktestEngine';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { parseZipFile } from '../utils/zipParser';
@@ -248,49 +249,18 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
     return Array.from(sectors).sort();
   }, [activeStockPool]);
 
-  // Compute sector with highest volume momentum
-  const topSectorMomentum = useMemo(() => {
-    if (activeStockPool.length === 0) return null;
-    const sectorMomentum = new Map<string, { currentVol: number; pastVol: number }>();
-    
-    activeStockPool.forEach(s => {
-      if (!s.sector || !s.candles || s.candles.length < 10) return;
-      const len = s.candles.length;
-      // Last 5 days vs previous 5 days
-      const recent = s.candles.slice(len - 5);
-      const past = s.candles.slice(len - 10, len - 5);
-      
-      const currentVol = recent.reduce((sum, c) => sum + c.volume, 0);
-      const pastVol = past.reduce((sum, c) => sum + c.volume, 0);
-      
-      if (!sectorMomentum.has(s.sector)) {
-        sectorMomentum.set(s.sector, { currentVol: 0, pastVol: 0 });
-      }
-      const cur = sectorMomentum.get(s.sector)!;
-      cur.currentVol += currentVol;
-      cur.pastVol += pastVol;
-    });
+  // Per-sector volume momentum, computed once against the full active pool (not the
+  // sector-filtered view) so it reflects true market-wide rotation. Feeds directly into
+  // the screener's scoring — a stock's early move is more credible when its whole sector
+  // is accelerating.
+  const sectorMomentum: Record<string, SectorMomentumStat> = useMemo(() => computeSectorMomentum(activeStockPool), [activeStockPool]);
 
-    let topSector = '';
-    let maxIncrease = -Infinity;
-    let increasePct = 0;
-    
-    sectorMomentum.forEach((data, sector) => {
-      if (data.pastVol > 0) {
-        const inc = ((data.currentVol - data.pastVol) / data.pastVol) * 100;
-        if (inc > maxIncrease) {
-          maxIncrease = inc;
-          topSector = sector;
-          increasePct = inc;
-        }
-      }
-    });
-    
-    if (topSector && maxIncrease > 0) {
-      return { sector: topSector, increasePct };
-    }
-    return null;
-  }, [activeStockPool]);
+  const topSectorMomentum = useMemo(() => {
+    const entries: SectorMomentumStat[] = Object.values(sectorMomentum).filter((s) => s.momentumPct > 0);
+    if (entries.length === 0) return null;
+    const top = entries.reduce((best, cur) => (cur.momentumPct > best.momentumPct ? cur : best));
+    return { sector: top.sector, increasePct: top.momentumPct };
+  }, [sectorMomentum]);
 
   // Filter stocks by sector
   const displayedStocks = useMemo(() => {
@@ -471,88 +441,53 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
       )}
 
       {/* Navigation Sub-Header Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-xl">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/70 border border-slate-800 p-2 rounded-2xl shadow-xl backdrop-blur-sm">
         {/* Navigation Tabs */}
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <button
+        <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto scrollbar-thin pb-1 sm:pb-0">
+          <TabButton
+            active={activeSubTab === 'screener'}
             onClick={() => setActiveSubTab('screener')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'screener'
-                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/30'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 text-emerald-300" />
-            <span>🎯 High-Profit Screener & Buy Signals</span>
-          </button>
-
-          <button
+            icon={<Sparkles className="w-4 h-4" />}
+            label="Screener"
+          />
+          <TabButton
+            active={activeSubTab === 'compare'}
             onClick={() => setActiveSubTab('compare')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'compare'
-                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-900/30'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Scale className="w-4 h-4 text-cyan-300" />
-            <span>⚔️ Side-by-Side Stock Comparison</span>
-          </button>
-
-          <button
+            icon={<Scale className="w-4 h-4" />}
+            label="Compare"
+          />
+          <TabButton
+            active={activeSubTab === 'chart'}
             onClick={() => setActiveSubTab('chart')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'chart'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <BarChart2 className="w-4 h-4 text-indigo-300" />
-            <span>📈 D3 Volume & Price Trend Chart</span>
-          </button>
-
-          <button
+            icon={<BarChart2 className="w-4 h-4" />}
+            label="Chart"
+          />
+          <TabButton
+            active={activeSubTab === 'lab'}
             onClick={() => setActiveSubTab('lab')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'lab'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Sliders className="w-4 h-4 text-amber-300" />
-            <span>🧪 Strategy & Backtest Lab</span>
-          </button>
-
-          <button
+            icon={<Sliders className="w-4 h-4" />}
+            label="Strategy Lab"
+          />
+          <TabButton
+            active={activeSubTab === 'edge'}
             onClick={() => setActiveSubTab('edge')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'edge'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Target className="w-4 h-4 text-fuchsia-300" />
-            <span>🎯 Edge Analysis</span>
-          </button>
-
-          <button
+            icon={<Target className="w-4 h-4" />}
+            label="Edge"
+          />
+          <TabButton
+            active={activeSubTab === 'postmortem'}
             onClick={() => setActiveSubTab('postmortem')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeSubTab === 'postmortem'
-                ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/30'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <ShieldAlert className="w-4 h-4 text-rose-300" />
-            <span>🛡️ Stop-Loss Post-Mortem</span>
-          </button>
-
-          <button
+            icon={<ShieldAlert className="w-4 h-4" />}
+            label="Post-Mortem"
+          />
+          <div className="w-px h-6 bg-slate-800 mx-1 shrink-0" />
+          <TabButton
+            active={false}
             onClick={() => setShowPriceAlertModal(true)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-slate-950 text-slate-400 hover:text-white border border-slate-800`}
-          >
-            <Bell className="w-4 h-4 text-rose-300" />
-            <span>Price Alerts</span>
-          </button>
+            icon={<Bell className="w-4 h-4" />}
+            label="Alerts"
+            badge={priceAlerts.filter(a => !a.isTriggered).length || undefined}
+          />
         </div>
 
         {/* Loaded Dataset Info & Quick Upload */}
@@ -669,6 +604,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
           config={config}
           selectedPatternFilter={selectedPatternFilter}
           edgeStats={edgeStats}
+          sectorMomentum={sectorMomentum}
           onUpdateConfig={setConfig}
           onSelectStockForChart={(sym) => {
             setChartTargetSymbol(sym);
@@ -1466,6 +1402,31 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
     </div>
   );
 };
+
+const TabButton: React.FC<{
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  badge?: number;
+}> = ({ active, onClick, icon, label, badge }) => (
+  <button
+    onClick={onClick}
+    className={`relative shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+      active
+        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/30'
+        : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+    }`}
+  >
+    <span className={active ? 'text-emerald-200' : 'text-slate-500'}>{icon}</span>
+    <span className="whitespace-nowrap">{label}</span>
+    {badge !== undefined && (
+      <span className="ml-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+        {badge}
+      </span>
+    )}
+  </button>
+);
 
 const KpiCard: React.FC<{
   label: string;

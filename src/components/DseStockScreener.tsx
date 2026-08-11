@@ -26,7 +26,7 @@ import {
   ChevronLeft,
   RefreshCw
 } from 'lucide-react';
-import { PatternEdgeStat, DseStockData, BacktestConfig, ScreenerStockCandidate, ScreenerDecisionStatus } from '../types';
+import { PatternEdgeStat, DseStockData, BacktestConfig, ScreenerStockCandidate, ScreenerDecisionStatus, SectorMomentumStat } from '../types';
 import { runDseStockScreener, parseCustomDseStockFiles, extractStockDataFromExtractedFiles, extractStockDataFromExtractedFilesAsync, mergeAndProcessStockDatasets, generateFullDseMarketUniverse } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
 import { StockDetailModal } from './StockDetailModal';
@@ -36,6 +36,7 @@ interface DseStockScreenerProps {
   config: BacktestConfig;
   selectedPatternFilter?: string;
   edgeStats?: PatternEdgeStat[];
+  sectorMomentum?: Record<string, SectorMomentumStat>;
   onUpdateConfig: (newConfig: BacktestConfig) => void;
   onSelectStockForChart: (symbol: string) => void;
   onCustomStockUploaded: (newStocks: DseStockData[]) => void;
@@ -46,6 +47,7 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   config,
   selectedPatternFilter,
   edgeStats,
+  sectorMomentum,
   onUpdateConfig,
   onSelectStockForChart,
   onCustomStockUploaded,
@@ -69,8 +71,8 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
   // Run Screener Analysis across current stock pool
   const candidates = useMemo(() => {
-    return runDseStockScreener(stocks, config, edgeStats);
-  }, [stocks, config, edgeStats]);
+    return runDseStockScreener(stocks, config, edgeStats, sectorMomentum);
+  }, [stocks, config, edgeStats, sectorMomentum]);
 
   // Distinct Sectors in Stock Pool
   const sectors = useMemo(() => {
@@ -503,7 +505,23 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
               {/* Profit Potential Score */}
               <div className="flex items-center gap-4 bg-slate-950 px-4 py-2 rounded-xl border border-slate-800 shrink-0">
                 <div className="text-right">
-                  <div className="text-[10px] text-slate-400 uppercase font-semibold">Profit Potential Score</div>
+                  <div className="text-[10px] text-slate-400 uppercase font-semibold flex items-center justify-end gap-1.5">
+                    Profit Potential Score
+                    {activeTopPick.edgeConfidence && (
+                      <span
+                        title={`Historical edge based on ${activeTopPick.edgeSampleSize} trade${activeTopPick.edgeSampleSize === 1 ? '' : 's'}`}
+                        className={`px-1.5 py-0.5 rounded-md border text-[8px] font-bold uppercase tracking-wide normal-case ${
+                          activeTopPick.edgeConfidence === 'High'
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : activeTopPick.edgeConfidence === 'Medium'
+                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                            : 'bg-slate-700/40 text-slate-400 border-slate-600/50'
+                        }`}
+                      >
+                        {activeTopPick.edgeConfidence} conf.
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xl font-black text-emerald-400 font-mono">
                     {activeTopPick.profitPotentialScore} <span className="text-xs text-slate-500">/ 100</span>
                   </div>
@@ -513,6 +531,23 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Historical Edge Banner */}
+            {activeTopPick.historicalWinRate > 0 && (
+              <div className="flex flex-wrap items-center gap-3 bg-slate-900 border border-slate-800 p-2.5 rounded-xl mb-3">
+                <div className="text-xs text-slate-400 font-bold uppercase">Historical Pattern Edge:</div>
+                <div className="text-amber-400 font-black text-sm">{activeTopPick.historicalWinRate}% Win Rate</div>
+                {activeTopPick.edgeConfidence && (
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
+                    activeTopPick.edgeConfidence === 'High' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/30' :
+                    activeTopPick.edgeConfidence === 'Medium' ? 'bg-amber-950/60 text-amber-400 border border-amber-500/30' :
+                    'bg-slate-800 text-slate-400 border border-slate-700'
+                  }`}>
+                    {activeTopPick.edgeConfidence} Confidence (n={activeTopPick.edgeSampleSize})
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Trade Execution Plan Row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

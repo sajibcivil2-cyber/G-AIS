@@ -2,7 +2,6 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -12,118 +11,6 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '20mb' }));
-
-  // Initialize Gemini AI SDK lazily
-  let ai: GoogleGenAI | null = null;
-  const getAI = () => {
-    if (!ai) {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error('GEMINI_API_KEY environment variable is missing.');
-      }
-      ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
-    }
-    return ai;
-  };
-
-  // Health check endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
-
-  // AI Code Audit endpoint
-  app.post('/api/analyze', async (req, res) => {
-    try {
-      const { projectFiles, projectMeta } = req.body;
-
-      if (!projectFiles || !Array.isArray(projectFiles) || projectFiles.length === 0) {
-        return res.status(400).json({ error: 'No project files provided for analysis.' });
-      }
-
-      const clientAI = getAI();
-
-      // Summarize file list and sample content for prompt
-      const codeSummaries = projectFiles
-        .slice(0, 15) // Top files
-        .map((f: { path: string; content: string }) => {
-          const sample = f.content.length > 2000 ? f.content.slice(0, 2000) + '\n...[truncated]' : f.content;
-          return `--- FILE: ${f.path} ---\n${sample}`;
-        })
-        .join('\n\n');
-
-      const prompt = `You are a Senior Web Application Architect, Security Auditor, and Code Quality Specialist.
-Perform a thorough output quality cross-check on the provided web application source code.
-
-Project Name: ${projectMeta?.name || 'Uploaded Project'}
-Total Files Analyzed: ${projectFiles.length}
-
-Code Excerpts:
-${codeSummaries}
-
-Analyze across these 6 Key Dimensions:
-1. Architecture & Design Cleanliness (Modularity, typography, spatial discipline, layout quality)
-2. AI-Slop & Anti-Patterns (Banned AI clichés, bloat, unnecessary wrappers, duplicate code)
-3. Performance & Bundle Efficiency (Unnecessary re-renders, unoptimized imports, heavy loops)
-4. Accessibility & UX Standards (ARIA labels, touch targets, keyboard nav, color contrast)
-5. Security & Data Protection (Exposed secrets, unvalidated inputs, dangerous innerHTML, CSRF/XSS)
-6. Output & DOM Consistency (Broken refs, unhandled edge states, missing key props, layout shift risks)
-
-Return a structured JSON object with the following schema:
-{
-  "overallScore": number (0-100),
-  "overallGrade": "A+" | "A" | "B+" | "B" | "C" | "D" | "F",
-  "summary": "2-3 concise sentences summarizing overall findings and output quality.",
-  "scores": {
-    "architecture": number (0-100),
-    "antiPattern": number (0-100),
-    "performance": number (0-100),
-    "accessibility": number (0-100),
-    "security": number (0-100),
-    "outputQuality": number (0-100)
-  },
-  "strengths": ["string", "string"],
-  "criticalIssues": [
-    {
-      "title": "string",
-      "category": "Architecture" | "AntiPattern" | "Performance" | "Accessibility" | "Security" | "OutputQuality",
-      "severity": "High" | "Medium" | "Low",
-      "file": "string",
-      "description": "string",
-      "recommendation": "string",
-      "suggestedFix": "string"
-    }
-  ],
-  "actionableFixes": ["string", "string", "string"]
-}`;
-
-      const response = await clientAI.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.2,
-        },
-      });
-
-      const jsonText = response.text ? response.text.trim() : '{}';
-      const parsedData = JSON.parse(jsonText);
-
-      return res.json(parsedData);
-    } catch (error: any) {
-      console.error('API /api/analyze Error:', error);
-      return res.status(500).json({
-        error: 'Failed to complete AI analysis',
-        details: error.message || String(error),
-      });
-    }
-  });
 
   // BD Share Live Data Sync Endpoint for Dhaka Stock Exchange (DSE)
   app.post('/api/dse/bdshare-live', async (req, res) => {

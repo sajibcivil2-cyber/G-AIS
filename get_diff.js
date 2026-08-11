@@ -1,0 +1,236 @@
+const fs = require('fs');
+
+const diffText = `--- a/src/utils/dseBacktestEngine.ts
++++ b/src/utils/dseBacktestEngine.ts
+@@ -24,7 +24,8 @@ import {
+   EarlyTrendAnalysis,
+   PatternEdgeStat,
+   StopLossPostMortemReport,
+-  StopLossFailurePattern
++  StopLossFailurePattern,
++  SectorMomentumStat
+ } from '../types';
+ 
+ // Realistic Sample Datasets for Dhaka Stock Exchange (DSE) Companies
+@@ -2170,10 +2171,49 @@ export function detectEarlyTrendIgnition(candles: DseStockCandle[]): EarlyTrendA
+ }
+ 
+ // High-Profit Decision-Making DSE Stock Screener Engine
++// Aggregate 5d-vs-prior-5d volume momentum per sector across the active pool. Used to
++// reward candidates sitting in a sector where money is currently rotating in — an "early
++// move" is far more credible when the whole sector is waking up, not just one ticker.
++export function computeSectorMomentum(stocks: DseStockData[]): Record<string, SectorMomentumStat> {
++  const raw = new Map<string, { currentVol: number; pastVol: number }>();
++
++  stocks.forEach((s) => {
++    if (!s.sector || !s.candles || s.candles.length < 10) return;
++    const len = s.candles.length;
++    const recent = s.candles.slice(len - 5);
++    const past = s.candles.slice(len - 10, len - 5);
++    const currentVol = recent.reduce((sum, c) => sum + c.volume, 0);
++    const pastVol = past.reduce((sum, c) => sum + c.volume, 0);
++
++    if (!raw.has(s.sector)) raw.set(s.sector, { currentVol: 0, pastVol: 0 });
++    const cur = raw.get(s.sector)!;
++    cur.currentVol += currentVol;
++    cur.pastVol += pastVol;
++  });
++
++  const result: Record<string, SectorMomentumStat> = {};
++  raw.forEach((data, sector) => {
++    const momentumPct = data.pastVol > 0 ? ((data.currentVol - data.pastVol) / data.pastVol) * 100 : 0;
++    result[sector] = { sector, momentumPct: Number(momentumPct.toFixed(1)), currentVol: data.currentVol, pastVol: data.pastVol };
++  });
++  return result;
++}
++
++// Minimum number of historical trade samples required before a win rate is trusted enough
++// to move the score. Below this, the sample is too small to distinguish skill from luck.
++const MIN_RELIABLE_SAMPLE = 3;
++
++function edgeConfidenceFromSampleSize(n: number): 'Low' | 'Medium' | 'High' {
++  if (n >= 10) return 'High';
++  if (n >= MIN_RELIABLE_SAMPLE) return 'Medium';
++  return 'Low';
++}
++
+ export function runDseStockScreener(
+   stocks: DseStockData[],
+   config: BacktestConfig,
+-  edgeStats?: PatternEdgeStat[]
++  edgeStats?: PatternEdgeStat[],
++  sectorMomentum?: Record<string, SectorMomentumStat>
+ ): ScreenerStockCandidate[] {
+   const candidates: ScreenerStockCandidate[] = [];
+ 
+@@ -2205,6 +2245,16 @@ export function runDseStockScreener(
+     // Early Trend Ignition Analysis
+     const earlyTrend = detectEarlyTrendIgnition(candles);
+ 
++    // Detect the canonical technical/harmonic pattern up front (same classifier used to
++    // label historical backtest signals) so it can drive BOTH the display text and the
++    // historical edge lookup below — previously these used two different, unrelated
++    // strings and the edge lookup silently failed to match almost every pattern type.
++    const techPattern = detectTechnicalPattern(candles, candles.length - 1);
++    const harmonic = detectHarmonicPattern(candles, candles.length - 1);
++    const canonicalPattern: TechnicalPatternType = harmonic
++      ? 'Harmonic Pattern (C-to-D)'
++      : techPattern.detectedPattern;
++
+     // Check last 5 days volatility range (VCP / Narrow Range)
+     const last5 = candles.slice(-5);
+     const maxHigh5 = Math.max(...last5.map((c) => c.high));
+@@ -2239,14 +2289,30 @@ export function runDseStockScreener(
+     else if (stock.yoyGrowthPct >= config.minYoyGrowthPct) score += 10;
+ 
+     // 4. Historical Backtest Win Rate on this Stock (15 pts max)
+-    if (winRate >= 75) score += 15;
+-    else if (winRate >= 60) score += 10;
+-    else if (winRate >= 50) score += 5;
++    // Gated by sample size — a stock with 1-2 historical signals hasn't proven anything
++    // yet, and rewarding its win rate the same as a 15-signal track record just rewards
++    // noise. Below MIN_RELIABLE_SAMPLE we don't award points off this stock's own history.
++    const hasReliableOwnHistory = totalSignals >= MIN_RELIABLE_SAMPLE;
++    if (hasReliableOwnHistory) {
++      if (winRate >= 75) score += 15;
++      else if (winRate >= 60) score += 10;
++      else if (winRate >= 50) score += 5;
++    }
+ 
+     // 5. Liquidity & Valuation P/E Safety (10 pts max)
+     if (stock.peRatio < 15 && stock.peRatio > 0) score += 5;
+     if (passesTurnover) score += 5;
+ 
++    // 6. Sector Momentum — is money currently rotating into this stock's sector? (10 pts max)
++    // An early move in a stock is far more credible when its whole sector is accelerating,
++    // since it points to a shared catalyst rather than single-ticker noise.
++    const sectorMomentumPct = sectorMomentum?.[stock.sector]?.momentumPct;
++    if (sectorMomentumPct !== undefined) {
++      if (sectorMomentumPct >= 20) score += 10;
++      else if (sectorMomentumPct >= 10) score += 6;
++      else if (sectorMomentumPct >= 5) score += 3;
++    }
++
+     // Cap score at 100
+     let profitPotentialScore = Math.min(100, score);
+ 
+@@ -2280,7 +2346,8 @@ export function runDseStockScreener(
+     if (isVolumeDryUp) catalysts.push(\`💧 Institutional Supply Dry-up (0.\${Math.round(rvol20 * 10)}x Vol)\`);
+     if (stock.yoyGrowthPct >= 8.0) catalysts.push(\`📈 Strong YoY Revenue Growth (+\${stock.yoyGrowthPct}%)\`);
+     if (stock.peRatio < 14) catalysts.push(\`🛡️ Attractive P/E Valuation (\${stock.peRatio}x)\`);
+-    if (winRate >= 65 && totalSignals > 0) catalysts.push(\`🏆 \${winRate.toFixed(0)}% Historical Signal Win Rate\`);
++    if (hasReliableOwnHistory && winRate >= 65) catalysts.push(\`🏆 \${winRate.toFixed(0)}% Historical Signal Win Rate (\${totalSignals} trades)\`);
++    if (sectorMomentumPct !== undefined && sectorMomentumPct >= 10) catalysts.push(\`🌊 \${stock.sector} sector volume rotation +\${sectorMomentumPct.toFixed(0)}%\`);
+ 
+     // Pattern description
+     let pattern = 'Consolidation Base';
+@@ -2290,37 +2357,50 @@ export function runDseStockScreener(
+     else if (isVolumeSurge) pattern = 'Volume Surge Momentum';
+     else if (latest.close > ma20Price) pattern = '20d Moving Average Uptrend Support';
+ 
+-    // Edge Analysis Factor
+-    let historicalEdgeWinRate = winRate;
++    // Historical Edge Factor — does this exact pattern have a proven track record for
++    // this stock, this sector, or the market overall? Matches on the canonical pattern
++    // type (the same classification used to label every historical backtest signal), not
++    // a loose free-text description, so this now applies across ALL detected pattern
++    // types instead of only the one case that happened to substring-match before.
++    let historicalEdgeWinRate = hasReliableOwnHistory ? winRate : 0;
+     let patternEdgeBonus = 0;
+-    
+-    // We try to match our determined 'pattern' string to the technical patterns in EdgeStats
+-    // Note: Edge stats uses the TechnicalPatternType, while the screener 'pattern' string here is sometimes different.
+-    // For a deeper integration, we'll map the backtest 'detectedPattern' (e.g., from 'signals' if we had them)
+-    // Here we'll do a loose match or just check for the base pattern types if 'edgeStats' is provided.
+-    if (edgeStats && edgeStats.length > 0) {
+-      let matchedPatternEdge = edgeStats.find(e => pattern.includes(e.pattern) || e.pattern.includes('VCP') && pattern.includes('VCP'));
+-      
+-      if (matchedPatternEdge) {
+-        const sectorEdge = matchedPatternEdge.sectorEdges.find(se => se.sector === stock.sector);
+-        if (sectorEdge && sectorEdge.winRate >= 60) {
+-           patternEdgeBonus += 15;
+-           historicalEdgeWinRate = Math.max(historicalEdgeWinRate, sectorEdge.winRate);
+-        }
+-        
+-        const stockEdge = matchedPatternEdge.stockEdges.find(se => se.symbol === stock.symbol);
+-        if (stockEdge && stockEdge.winRate >= 70) {
+-           patternEdgeBonus += 25;
+-           historicalEdgeWinRate = Math.max(historicalEdgeWinRate, stockEdge.winRate);
+-        }
++    let edgeSampleSize = totalSignals;
++
++    const matchedPatternEdge = edgeStats?.find((e) => e.pattern === canonicalPattern);
++
++    if (matchedPatternEdge) {
++      // Market-wide edge for this exact pattern (any sector, any stock)
++      if (matchedPatternEdge.count >= MIN_RELIABLE_SAMPLE && matchedPatternEdge.winRate >= 60) {
++        patternEdgeBonus += 8;
++        historicalEdgeWinRate = Math.max(historicalEdgeWinRate, matchedPatternEdge.winRate);
++        edgeSampleSize = Math.max(edgeSampleSize, matchedPatternEdge.count);
++      }
++
++      // Sector-specific edge for this pattern
++      const sectorEdge = matchedPatternEdge.sectorEdges.find((se) => se.sector === stock.sector);
++      if (sectorEdge && sectorEdge.count >= MIN_RELIABLE_SAMPLE && sectorEdge.winRate >= 60) {
++        patternEdgeBonus += 15;
++        historicalEdgeWinRate = Math.max(historicalEdgeWinRate, sectorEdge.winRate);
++        edgeSampleSize = Math.max(edgeSampleSize, sectorEdge.count);
++      }
++
++      // Stock-specific edge for this pattern (strongest signal — this exact setup has
++      // worked on this exact stock before)
++      const stockEdge = matchedPatternEdge.stockEdges.find((se) => se.symbol === stock.symbol);
++      if (stockEdge && stockEdge.count >= MIN_RELIABLE_SAMPLE && stockEdge.winRate >= 70) {
++        patternEdgeBonus += 25;
++        historicalEdgeWinRate = Math.max(historicalEdgeWinRate, stockEdge.winRate);
++        edgeSampleSize = Math.max(edgeSampleSize, stockEdge.count);
+       }
+     }
+ 
+     if (patternEdgeBonus > 0) {
+-       profitPotentialScore = Math.min(100, profitPotentialScore + patternEdgeBonus);
+-       catalysts.push(\`🎯 Pattern-Sector Edge (\${historicalEdgeWinRate.toFixed(0)}% Win Prob)\`);
++      profitPotentialScore = Math.min(100, profitPotentialScore + patternEdgeBonus);
++      catalysts.push(\`🎯 \${canonicalPattern} Edge: \${historicalEdgeWinRate.toFixed(0)}% Win Rate (\${edgeSampleSize} trades)\`);
+     }
+ 
++    const edgeConfidence = edgeConfidenceFromSampleSize(edgeSampleSize);
++
+     // Trade reasoning sentence
+     let reasoning = 'Stock is maintaining healthy price structure above 20d MA with stable turnover.';
+     if (decisionStatus === 'STRONG_BUY') {
+@@ -2339,9 +2419,6 @@ export function runDseStockScreener(
+     if (decisionStatus === 'EARLY_TREND_IGNITION') recommendedPositionSizePct = 14;
+     if (decisionStatus === 'WATCHLIST_BREAKOUT') recommendedPositionSizePct = 12;
+ 
+-    const techPattern = detectTechnicalPattern(candles, candles.length - 1);
+-    const harmonic = detectHarmonicPattern(candles, candles.length - 1);
+-
+     let finalDetectedPattern = techPattern.detectedPattern;
+     let finalPatternConfidence = techPattern.patternConfidence;
+     let finalPatternDescription = techPattern.patternDescription;
+@@ -2401,6 +2478,9 @@ export function runDseStockScreener(
+       earlyTrendStage: earlyTrend.stage,
+       earlyTrendSignals: earlyTrend.signals,
+       harmonicDetails: harmonic || undefined,
++      edgeSampleSize,
++      edgeConfidence,
++      sectorMomentumPct,
+     });
+   }
+ 
+@@ -2423,9 +2503,10 @@ export function evaluateStockForScreener(
+   stock: DseStockData,
+   config: BacktestConfig,
+   signals?: BreakoutSignal[],
+-  edgeStats?: PatternEdgeStat[]
++  edgeStats?: PatternEdgeStat[],
++  sectorMomentum?: Record<string, SectorMomentumStat>
+ ): ScreenerStockCandidate | null {
+-  const candidates = runDseStockScreener([stock], config, edgeStats);
++  const candidates = runDseStockScreener([stock], config, edgeStats, sectorMomentum);
+   return candidates.length > 0 ? candidates[0] : null;
+ }
+`;
+
+fs.writeFileSync('dseEngine.patch', diffText);

@@ -59,6 +59,9 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
     patternConfidence,
     patternDescription,
     historicalWinRate,
+    edgeSampleSize,
+    edgeConfidence,
+    sectorMomentumPct,
     tradeSetupReasoning,
     recommendedPositionSizePct,
     peRatio,
@@ -336,7 +339,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
         {activeTab === 'overview' && (
           <div className="space-y-4">
             {/* Top Metrics Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs font-mono">
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
                 <span className="text-[10px] text-slate-400 uppercase">Profit Potential Score</span>
                 <div className="text-xl font-black text-emerald-400">
@@ -372,6 +375,23 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
                   {peRatio.toFixed(1)}x
                 </div>
                 <span className="text-[10px] text-slate-500">Earnings Multiple</span>
+              </div>
+
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-400 uppercase">Sector Momentum</span>
+                {sectorMomentumPct !== undefined ? (
+                  <>
+                    <div className={`text-xl font-black ${sectorMomentumPct >= 0 ? 'text-cyan-300' : 'text-slate-400'}`}>
+                      {sectorMomentumPct >= 0 ? '+' : ''}{sectorMomentumPct.toFixed(0)}%
+                    </div>
+                    <span className="text-[10px] text-slate-500">{sector} 5d volume rotation</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-xl font-black text-slate-600">—</div>
+                    <span className="text-[10px] text-slate-500">Not enough sector data</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -609,8 +629,13 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
                   <ShieldAlert className="w-4 h-4 text-amber-400" />
                   Risk Profile & Position Sizing Analytics
                 </span>
-                <span className="text-xs text-emerald-400 font-bold">
-                  Win Rate: {historicalWinRate}%
+                <span className="text-xs text-emerald-400 font-bold flex items-center gap-2">
+                  <span>Win Rate: {historicalWinRate}%</span>
+                  {candidate.keyCatalysts.some(c => c.includes('Sector Momentum')) && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[9px]">
+                      Sector Rotation Active
+                    </span>
+                  )}
                 </span>
               </div>
 
@@ -633,9 +658,20 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
 
                 <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
                   <span className="text-[10px] text-slate-400 uppercase">Historical Strategy Win Rate</span>
-                  <div className="text-2xl font-black text-amber-300">{historicalWinRate}%</div>
+                  <div className="flex items-end gap-2">
+                    <div className="text-2xl font-black text-amber-300">{historicalWinRate}%</div>
+                    {candidate.edgeConfidence && (
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold mb-1 ${
+                        candidate.edgeConfidence === 'High' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/30' :
+                        candidate.edgeConfidence === 'Medium' ? 'bg-amber-950/60 text-amber-400 border border-amber-500/30' :
+                        'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}>
+                        {candidate.edgeConfidence} Conf (n={candidate.edgeSampleSize})
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-slate-400 font-sans">
-                    Win rate across past volume breakout patterns in DSE database.
+                    Win rate across past pattern setups in DSE database.
                   </p>
                 </div>
               </div>
@@ -744,5 +780,28 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
         </div>
       </div>
     </div>
+  );
+};
+
+// Sample-size-aware confidence badge — a win rate is only as trustworthy as the number of
+// historical trades behind it. Shown next to every win-rate figure so a lucky 1-trade
+// streak never reads with the same confidence as a proven 15-trade track record.
+const ConfidenceBadge: React.FC<{ confidence?: 'Low' | 'Medium' | 'High'; sampleSize?: number }> = ({
+  confidence,
+  sampleSize,
+}) => {
+  if (!confidence) return null;
+  const styles: Record<string, string> = {
+    High: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    Medium: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    Low: 'bg-slate-700/40 text-slate-400 border-slate-600/50',
+  };
+  return (
+    <span
+      title={`Based on ${sampleSize ?? 0} historical trade${sampleSize === 1 ? '' : 's'} — ${confidence.toLowerCase()} confidence sample size`}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9px] font-bold uppercase tracking-wide ${styles[confidence]}`}
+    >
+      {confidence} conf. · n={sampleSize ?? 0}
+    </span>
   );
 };

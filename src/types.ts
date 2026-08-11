@@ -1,45 +1,3 @@
-export type IssueSeverity = 'Critical' | 'High' | 'Medium' | 'Low';
-
-export type IssueCategory =
-  | 'Architecture'
-  | 'AntiPattern'
-  | 'Performance'
-  | 'Accessibility'
-  | 'Security'
-  | 'OutputQuality';
-
-export interface AuditIssue {
-  id: string;
-  title: string;
-  category: IssueCategory;
-  severity: IssueSeverity;
-  file?: string;
-  lineNumber?: number;
-  description: string;
-  recommendation: string;
-  suggestedFix?: string;
-}
-
-export interface MetricScores {
-  architecture: number;
-  antiPattern: number;
-  performance: number;
-  accessibility: number;
-  security: number;
-  outputQuality: number;
-}
-
-export interface AuditResult {
-  overallScore: number;
-  overallGrade: 'A+' | 'A' | 'B+' | 'B' | 'C' | 'D' | 'F';
-  summary: string;
-  scores: MetricScores;
-  strengths: string[];
-  issues: AuditIssue[];
-  actionableFixes: string[];
-  analyzedAt: string;
-}
-
 export interface ExtractedFile {
   path: string;
   name: string;
@@ -47,14 +5,6 @@ export interface ExtractedFile {
   extension: string;
   content: string;
   isBinary: boolean;
-}
-
-export interface SampleProject {
-  id: string;
-  name: string;
-  description: string;
-  badge: string;
-  files: ExtractedFile[];
 }
 
 export interface DseStockCandle {
@@ -246,18 +196,25 @@ export interface EarlyTrendAnalysis {
   signals: string[];
 }
 
+export interface SectorMomentumStat {
+  sector: string;
+  momentumPct: number; // % change in aggregate sector volume, recent 5d vs prior 5d
+  currentVol: number;
+  pastVol: number;
+}
+
 export interface ScreenerStockCandidate {
   symbol: string;
   stockName: string;
   sector: string;
   stock: DseStockData;
   decisionStatus: ScreenerDecisionStatus;
-  profitPotentialScore: number; // 0 - 100 score
+  profitPotentialScore: number;
   latestClose: number;
   latestDate: string;
   latestVolume: number;
   avgVolume20: number;
-  rvol20: number; // Volume / 20d MA Volume
+  rvol20: number;
   ma20Price: number;
   entryPrice: number;
   targetPrice: number;
@@ -279,5 +236,8 @@ export interface ScreenerStockCandidate {
   earlyTrendStage?: 'STAGE_1_EARLY_COIL' | 'STAGE_2_IGNITION' | 'STAGE_3_FULL_BREAKOUT' | 'BASE_ACCUMULATION';
   earlyTrendSignals?: string[];
   harmonicDetails?: HarmonicPatternDetails;
+  edgeSampleSize?: number;
+  edgeConfidence?: 'Low' | 'Medium' | 'High';
+  sectorMomentumPct?: number;
 }
 
