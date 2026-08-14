@@ -12,7 +12,18 @@ async function startServer() {
 
   app.use(express.json({ limit: '20mb' }));
 
-  // BD Share Live Data Sync Endpoint for Dhaka Stock Exchange (DSE)
+  // Synthetic Gap-Fill Endpoint for Dhaka Stock Exchange (DSE) missing trading days
+  //
+  // IMPORTANT: This does NOT fetch real market data from dsebd.org or any live source.
+  // dsebd.org's robots.txt disallows automated access, and even if it didn't, its public
+  // pages only expose today's latest snapshot price — not historical daily OHLC candles for
+  // arbitrary past dates. So there is no legitimate way to "backfill" missing historical
+  // days from a live feed. What this endpoint actually does is generate a plausible-looking
+  // synthetic random walk, anchored and clamped to the stock's last known real close, purely
+  // so the backtester has continuous candles to work with. It WILL diverge from the stock's
+  // real dsebd.org closing price on any day it filled in — that divergence is expected, not
+  // a bug. If you need real prices, re-upload a fresh historical data file instead of relying
+  // on this to catch up.
   app.post('/api/dse/bdshare-live', async (req, res) => {
     try {
       const { stocksInfo, lastAvailableDate } = req.body;
@@ -43,7 +54,7 @@ async function startServer() {
       if (missingDates.length === 0) {
         return res.json({
           success: true,
-          message: 'Dataset is already fully up to date with BD Share live market feed.',
+          message: 'No missing trading days to fill — dataset already covers every trading day up to today.',
           missingDatesCount: 0,
           syncedCandles: {},
           syncedAt: new Date().toISOString(),
@@ -128,74 +139,6 @@ async function startServer() {
       console.error('API /api/dse/bdshare-live Error:', error);
       return res.status(500).json({
         error: 'Failed to sync live BD Share market data.',
-        details: error.message || String(error),
-      });
-    }
-  });
-
-  // DSE Simulated Realtime Ticker Re-fetch Endpoint for Auto-Resolution
-  app.post('/api/dse/refetch-ticker', async (req, res) => {
-    try {
-      const { symbols, forceFailure } = req.body;
-      if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
-        return res.status(400).json({ success: false, error: 'No symbols specified for ticker re-fetch.' });
-      }
-
-      // Simulate API network roundtrip delay
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      if (forceFailure) {
-        return res.status(503).json({
-          success: false,
-          error: 'Simulated DSE API Gateway Timeout (503). Unable to reach exchange feed server.',
-        });
-      }
-
-      const benchmarkPrices: Record<string, number> = {
-        CONFIDCEM: 68.90,
-        GP: 260.00,
-        BATBC: 252.50,
-        SQURPHARMA: 219.70,
-        RENATA: 470.20,
-        BEXIMCO: 23.20,
-        LHBL: 58.10,
-        OLYMPIC: 154.20,
-        WALTONHIL: 393.10,
-        MARICO: 2719.40,
-        UNIQUEHRL: 44.80,
-        BRACBANK: 63.70,
-        CITYBANK: 24.80,
-        ADNTEL: 118.50,
-        ALLTEX: 16.20,
-        AGNISYSL: 28.50,
-        AAMRANET: 52.30,
-      };
-
-      const refetchedData: Record<string, { symbol: string; close: number; benchmarkSource: string; timestamp: string }> = {};
-
-      symbols.forEach((sym: string) => {
-        const symUpper = sym.toUpperCase();
-        const price = benchmarkPrices[symUpper] || 100.0;
-        refetchedData[symUpper] = {
-          symbol: symUpper,
-          close: price,
-          benchmarkSource: 'DSE Official Realtime Website Feed (Simulated API)',
-          timestamp: new Date().toISOString(),
-        };
-      });
-
-      return res.json({
-        success: true,
-        resolvedCount: Object.keys(refetchedData).length,
-        data: refetchedData,
-        message: `Successfully re-fetched live ticker data for ${Object.keys(refetchedData).length} symbol(s) from simulated DSE API.`,
-        syncedAt: new Date().toISOString(),
-      });
-    } catch (error: any) {
-      console.error('API /api/dse/refetch-ticker Error:', error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to re-fetch ticker data from simulated DSE API.',
         details: error.message || String(error),
       });
     }
