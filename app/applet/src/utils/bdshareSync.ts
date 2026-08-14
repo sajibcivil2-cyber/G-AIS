@@ -137,7 +137,7 @@ export async function syncLiveBdShareData(stocks: DseStockData[]): Promise<BdSha
     };
   });
 
-  const response = await fetch('/api/dse/synthetic-gap-fill', {
+  const response = await fetch('/api/dse/bdshare-live', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

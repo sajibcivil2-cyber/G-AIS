@@ -384,7 +384,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
                     <div className={`text-xl font-black ${sectorMomentumPct >= 0 ? 'text-cyan-300' : 'text-slate-400'}`}>
                       {sectorMomentumPct >= 0 ? '+' : ''}{sectorMomentumPct.toFixed(0)}%
                     </div>
-                    <span className="text-[10px] text-slate-500">{sector} 5d volume rotation</span>
+                    <span className="text-[10px] text-slate-500">{sector} 5d money flow</span>
                   </>
                 ) : (
                   <>

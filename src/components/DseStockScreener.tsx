@@ -26,7 +26,7 @@ import {
   ChevronLeft,
   RefreshCw
 } from 'lucide-react';
-import { PatternEdgeStat, DseStockData, BacktestConfig, ScreenerStockCandidate, ScreenerDecisionStatus, SectorMomentumStat } from '../types';
+import { PatternEdgeStat, DseStockData, BacktestConfig, ScreenerStockCandidate, ScreenerDecisionStatus, SectorMoneyFlowStat } from '../types';
 import { runDseStockScreener, parseCustomDseStockFiles, extractStockDataFromExtractedFiles, extractStockDataFromExtractedFilesAsync, mergeAndProcessStockDatasets, generateFullDseMarketUniverse } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
 import { StockDetailModal } from './StockDetailModal';
@@ -36,7 +36,7 @@ interface DseStockScreenerProps {
   config: BacktestConfig;
   selectedPatternFilter?: string;
   edgeStats?: PatternEdgeStat[];
-  sectorMomentum?: Record<string, SectorMomentumStat>;
+  sectorMoneyFlow?: Record<string, SectorMoneyFlowStat>;
   onUpdateConfig: (newConfig: BacktestConfig) => void;
   onSelectStockForChart: (symbol: string) => void;
   onCustomStockUploaded: (newStocks: DseStockData[]) => void;
@@ -47,7 +47,7 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   config,
   selectedPatternFilter,
   edgeStats,
-  sectorMomentum,
+  sectorMoneyFlow,
   onUpdateConfig,
   onSelectStockForChart,
   onCustomStockUploaded,
@@ -71,8 +71,8 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
   // Run Screener Analysis across current stock pool
   const candidates = useMemo(() => {
-    return runDseStockScreener(stocks, config, edgeStats, sectorMomentum);
-  }, [stocks, config, edgeStats, sectorMomentum]);
+    return runDseStockScreener(stocks, config, edgeStats, sectorMoneyFlow);
+  }, [stocks, config, edgeStats, sectorMoneyFlow]);
 
   // Distinct Sectors in Stock Pool
   const sectors = useMemo(() => {

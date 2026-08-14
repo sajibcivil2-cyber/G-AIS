@@ -121,15 +121,15 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
         setSyncNotice({
           type: 'success',
           message: result.addedCandlesCount > 0
-            ? `Synced ${result.missingDates.length} missing trading days! Appended ${result.addedCandlesCount} candles up to ${newFresh.lastAvailableDate} and saved database.${rejectedSuffix}`
-            : `BD Share market dataset is already fully up to date and saved in database.${rejectedSuffix}`,
+            ? `Filled ${result.missingDates.length} missing trading day(s) with estimated candles (not real prices) up to ${newFresh.lastAvailableDate} and saved database.${rejectedSuffix}`
+            : `No missing days to fill — dataset already saved in database.${rejectedSuffix}`,
         });
       }
     } catch (err: any) {
-      console.error('BD Share sync error:', err);
+      console.error('Gap-fill sync error:', err);
       setSyncNotice({
         type: 'error',
-        message: err.message || 'Failed to connect to BD Share live market proxy.',
+        message: err.message || 'Failed to fill missing days.',
       });
     } finally {
       setIsSyncing(false);
@@ -160,13 +160,13 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
 
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-bold font-mono border border-indigo-500/40 flex items-center gap-1">
-                <Zap className="w-3 h-3 text-amber-300 fill-amber-300" /> BD SHARE LIVE FEED
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold font-mono border border-amber-500/40 flex items-center gap-1" title="This fills missing days with an estimated price, anchored to the last real close. It is NOT live dsebd.org data.">
+                <Zap className="w-3 h-3 text-amber-300 fill-amber-300" /> SYNTHETIC GAP-FILL (NOT LIVE DATA)
               </span>
 
               {freshness.isUpToDate ? (
                 <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold font-mono border border-emerald-500/40 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Fully Synced (Up to {freshness.lastAvailableDate})
+                  <CheckCircle2 className="w-3 h-3" /> No Missing Days (Up to {freshness.lastAvailableDate})
                 </span>
               ) : (
                 <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold font-mono border border-amber-500/40 flex items-center gap-1">
@@ -174,6 +174,10 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
                 </span>
               )}
             </div>
+
+            <p className="text-[10px] text-amber-400/90 font-sans max-w-2xl">
+              This tool cannot pull real prices from dsebd.org (its robots.txt disallows automated access, and its live pages only show today's snapshot, not historical data). "Sync" below fills gaps with an estimated price for backtest continuity only — it will not match real dsebd.org closes. Re-upload a fresh data file for accurate prices.
+            </p>
 
             <div className="text-xs text-slate-300 font-mono flex items-center gap-3 flex-wrap">
               <span className="flex items-center gap-1 text-slate-400">
@@ -206,7 +210,7 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
               onChange={(e) => setAutoSync(e.target.checked)}
               className="accent-indigo-500 rounded"
             />
-            <span>Auto-Sync Live Feed</span>
+            <span>Auto-Fill Gaps on Load</span>
           </label>
 
           <button
@@ -249,13 +253,13 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
             }`}
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Syncing BD Share...' : 'Sync Live BD Share Data'}</span>
+            <span>{isSyncing ? 'Filling Gaps...' : 'Fill Missing Days (Estimated)'}</span>
           </button>
 
           <button
             onClick={() => setShowDetailModal(true)}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700"
-            title="BD Share Synchronization Details"
+            title="Synthetic Gap-Fill Details"
           >
             <Info className="w-4 h-4" />
           </button>
@@ -297,7 +301,7 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
               <div className="flex items-center gap-2">
                 <Globe className="w-5 h-5 text-indigo-400" />
                 <h3 className="text-lg font-bold text-white font-mono">
-                  BD Share Live Market Sync Pipeline
+                  Synthetic Gap-Fill — How It Works
                 </h3>
               </div>
               <button
@@ -309,8 +313,11 @@ export const BdShareLiveSyncBar: React.FC<BdShareLiveSyncBarProps> = ({
             </div>
 
             <div className="space-y-3 text-xs text-slate-300 font-mono leading-relaxed">
+              <p className="text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+                This does NOT fetch real prices from dsebd.org. dsebd.org's robots.txt disallows automated access, and even its live pages only ever show today's snapshot — not historical daily closes for past dates. There is no way to legitimately backfill real historical prices this way.
+              </p>
               <p>
-                The live market engine checks historical stock datasets against current Dhaka Stock Exchange (DSE) trading days. Any missing daily trading sessions between the last available candle and today are fetched and appended seamlessly. Every synced candle is validated against the stock's last known-good price before being accepted — implausible jumps are rejected rather than stored.
+                What this actually does: for every missing trading day between your dataset's last candle and today, it generates an estimated candle using a random walk anchored and clamped to the stock's last known real close, purely so the backtester and charts have continuous data. Every generated candle is validated against the stock's last known-good price before being accepted — implausible jumps are rejected rather than stored. These candles will not match the real dsebd.org closing price. For accurate prices, re-upload a fresh historical data file.
               </p>
 
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">

@@ -25,7 +25,7 @@ import {
   PatternEdgeStat,
   StopLossPostMortemReport,
   StopLossFailurePattern,
-  SectorMomentumStat
+  SectorMoneyFlowStat
 } from '../types';
 
 // Realistic Sample Datasets for Dhaka Stock Exchange (DSE) Companies
@@ -1138,7 +1138,7 @@ export function generateStopLossPostMortemReport(signals: BreakoutSignal[]): Sto
         'Average daily volume < 150,000 shares',
         'DSEX benchmark index or sector index trending down'
       ],
-      repetitionReasoning: 'Low-liquidity stocks are easily manipulated by small buying spikes. When sector momentum is absent, lack of follow-through volume causes immediate reversion.',
+      repetitionReasoning: 'Low-liquidity stocks are easily manipulated by small buying spikes. When sector money flow is absent, lack of follow-through volume causes immediate reversion.',
       mitigationRule: 'Filter out illiquid securities (< ৳20M daily turnover) and trade in alignment with sector trend.',
       affectedSymbols: Array.from(new Set(p5Signals.map((s) => s.symbol))).slice(0, 6)
     }
@@ -2172,27 +2172,59 @@ export function detectEarlyTrendIgnition(candles: DseStockCandle[]): EarlyTrendA
 }
 
 // High-Profit Decision-Making DSE Stock Screener Engine
-export function computeSectorMomentum(stocks: DseStockData[]): Record<string, SectorMomentumStat> {
-  const raw = new Map<string, { currentVol: number; pastVol: number }>();
+export function computeSectorMoneyFlow(stocks: DseStockData[]): Record<string, SectorMoneyFlowStat> {
+  const raw = new Map<string, { currentTurnover: number; pastTurnover: number }>();
 
-  stocks.forEach((s) => {
-    if (!s.sector || !s.candles || s.candles.length < 10) return;
-    const len = s.candles.length;
-    const recent = s.candles.slice(len - 5);
-    const past = s.candles.slice(len - 10, len - 5);
-    const currentVol = recent.reduce((sum, c) => sum + c.volume, 0);
-    const pastVol = past.reduce((sum, c) => sum + c.volume, 0);
-
-    if (!raw.has(s.sector)) raw.set(s.sector, { currentVol: 0, pastVol: 0 });
-    const cur = raw.get(s.sector)!;
-    cur.currentVol += currentVol;
-    cur.pastVol += pastVol;
+  // Determine the global max date to align all stocks calendar-wise
+  let globalMaxDateStr = '1970-01-01';
+  stocks.forEach(s => {
+    if (s.candles && s.candles.length > 0) {
+      const lastDate = s.candles[s.candles.length - 1].date;
+      if (lastDate > globalMaxDateStr) globalMaxDateStr = lastDate;
+    }
   });
 
-  const result: Record<string, SectorMomentumStat> = {};
+  const globalMaxDate = new Date(globalMaxDateStr);
+  
+  stocks.forEach((s) => {
+    if (!s.sector || !s.candles || s.candles.length === 0) return;
+    
+    let currentTurnover = 0;
+    let pastTurnover = 0;
+
+    s.candles.forEach(c => {
+      const candleDate = new Date(c.date);
+      const diffTime = Math.abs(globalMaxDate.getTime() - candleDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      const turnover = (c.close * c.volume) / 1000000; // BDT Millions
+
+      if (diffDays <= 7) {
+        // Last 7 calendar days (~5 trading days)
+        currentTurnover += turnover;
+      } else if (diffDays > 7 && diffDays <= 14) {
+        // Prior 7 calendar days
+        pastTurnover += turnover;
+      }
+    });
+
+    if (!raw.has(s.sector)) raw.set(s.sector, { currentTurnover: 0, pastTurnover: 0 });
+    const cur = raw.get(s.sector);
+    if (cur) {
+      cur.currentTurnover += currentTurnover;
+      cur.pastTurnover += pastTurnover;
+    }
+  });
+
+  const result: Record<string, SectorMoneyFlowStat> = {};
   raw.forEach((data, sector) => {
-    const momentumPct = data.pastVol > 0 ? ((data.currentVol - data.pastVol) / data.pastVol) * 100 : 0;
-    result[sector] = { sector, momentumPct: Number(momentumPct.toFixed(1)), currentVol: data.currentVol, pastVol: data.pastVol };
+    const momentumPct = data.pastTurnover > 0 ? ((data.currentTurnover - data.pastTurnover) / data.pastTurnover) * 100 : 0;
+    result[sector] = { 
+      sector, 
+      momentumPct: Number(momentumPct.toFixed(1)), 
+      currentVol: data.currentTurnover, 
+      pastVol: data.pastTurnover 
+    };
   });
   return result;
 }
@@ -2209,7 +2241,7 @@ export function runDseStockScreener(
   stocks: DseStockData[],
   config: BacktestConfig,
   edgeStats?: PatternEdgeStat[],
-  sectorMomentum?: Record<string, SectorMomentumStat>
+  sectorMoneyFlow?: Record<string, SectorMoneyFlowStat>
 ): ScreenerStockCandidate[] {
   const candidates: ScreenerStockCandidate[] = [];
 
@@ -2292,12 +2324,12 @@ export function runDseStockScreener(
     if (stock.peRatio < 15 && stock.peRatio > 0) score += 5;
     if (passesTurnover) score += 5;
 
-    // 6. Sector Momentum
-    const sectorMomentumPct = sectorMomentum?.[stock.sector]?.momentumPct;
-    if (sectorMomentumPct !== undefined) {
-      if (sectorMomentumPct >= 20) score += 10;
-      else if (sectorMomentumPct >= 10) score += 6;
-      else if (sectorMomentumPct >= 5) score += 3;
+    // 6. Sector Money Flow
+    const sectorMoneyFlowPct = sectorMoneyFlow?.[stock.sector]?.momentumPct;
+    if (sectorMoneyFlowPct !== undefined) {
+      if (sectorMoneyFlowPct >= 20) score += 10;
+      else if (sectorMoneyFlowPct >= 10) score += 6;
+      else if (sectorMoneyFlowPct >= 5) score += 3;
     }
 
     // Cap score at 100
@@ -2334,7 +2366,7 @@ export function runDseStockScreener(
     if (stock.yoyGrowthPct >= 8.0) catalysts.push(`📈 Strong YoY Revenue Growth (+${stock.yoyGrowthPct}%)`);
     if (stock.peRatio < 14) catalysts.push(`🛡️ Attractive P/E Valuation (${stock.peRatio}x)`);
     if (hasReliableOwnHistory && winRate >= 65) catalysts.push(`🏆 ${winRate.toFixed(0)}% Historical Signal Win Rate (${totalSignals} trades)`);
-    if (sectorMomentumPct !== undefined && sectorMomentumPct >= 10) catalysts.push(`🌊 ${stock.sector} sector volume rotation +${sectorMomentumPct.toFixed(0)}%`);
+    if (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct >= 10) catalysts.push(`🌊 ${stock.sector} sector money flow +${sectorMoneyFlowPct.toFixed(0)}%`);
 
     // Pattern description
     let pattern = 'Consolidation Base';
@@ -2394,7 +2426,7 @@ export function runDseStockScreener(
     let historicalEdgeWinRate = winRate;
     let patternEdgeBonus = 0;
     let edgeSampleSize = 0;
-    let edgeConfidence: 'Low' | 'Medium' | 'High' | undefined = undefined;
+    let edgeConfidence: 'Low' | 'Medium' | 'High' = 'Low';
 
     if (edgeStats && edgeStats.length > 0) {
       // Find matching pattern using finalDetectedPattern instead of loose string matches
@@ -2484,7 +2516,7 @@ export function runDseStockScreener(
       earlyTrendStage: earlyTrend.stage,
       earlyTrendSignals: earlyTrend.signals,
       harmonicDetails: harmonic || undefined,
-      sectorMomentumPct,
+      sectorMoneyFlowPct,
     });
   }
 
@@ -2508,164 +2540,15 @@ export function evaluateStockForScreener(
   config: BacktestConfig,
   signals?: BreakoutSignal[],
   edgeStats?: PatternEdgeStat[],
-  sectorMomentum?: Record<string, SectorMomentumStat>
+  sectorMoneyFlow?: Record<string, SectorMoneyFlowStat>
 ): ScreenerStockCandidate | null {
-  const candidates = runDseStockScreener([stock], config, edgeStats, sectorMomentum);
+  const candidates = runDseStockScreener([stock], config, edgeStats, sectorMoneyFlow);
   return candidates.length > 0 ? candidates[0] : null;
 }
 
 // ==========================================
 // DATA INTEGRITY & ANOMALY DETECTION ENGINE
-// ==========================================
-
-export interface SecondaryBenchmarkStock {
-  symbol: string;
-  name?: string;
-  benchmarkClose: number;
-  benchmarkDate: string;
-  benchmarkSource: string;
-}
-
-export interface PriceAnomalyRecord {
-  id: string;
-  symbol: string;
-  name: string;
-  appClose: number;
-  benchmarkClose: number;
-  variancePct: number; // e.g. +3.85% or -4.20%
-  isAnomalous: boolean; // true if Math.abs(variancePct) > threshold
-  timestamp: string;
-  severity: 'CRITICAL' | 'WARNING' | 'NORMAL';
-  description: string;
-}
-
-export interface DataIntegrityValidationResult {
-  totalChecked: number;
-  anomaliesFound: number;
-  anomalies: PriceAnomalyRecord[];
-  hasCriticalDiscrepancy: boolean;
-  checkedAt: string;
-}
-
-export const DSE_OFFICIAL_BENCHMARK_PRICES: Record<string, { price: number; name: string; source: string }> = {
-  CONFIDCEM: { price: 68.90, name: 'Confidence Cement PLC', source: 'DSE Official Realtime Website Feed' },
-  GP: { price: 260.00, name: 'Grameenphone Ltd.', source: 'DSE Official Realtime Website Feed' },
-  BATBC: { price: 252.50, name: 'British American Tobacco Bangladesh', source: 'DSE Official Realtime Website Feed' },
-  SQURPHARMA: { price: 219.70, name: 'Square Pharmaceuticals PLC', source: 'DSE Official Realtime Website Feed' },
-  RENATA: { price: 470.20, name: 'Renata PLC', source: 'DSE Official Realtime Website Feed' },
-  BEXIMCO: { price: 23.20, name: 'BEXIMCO Ltd.', source: 'DSE Official Realtime Website Feed' },
-  LHBL: { price: 58.10, name: 'LafargeHolcim Bangladesh PLC', source: 'DSE Official Realtime Website Feed' },
-  OLYMPIC: { price: 154.20, name: 'Olympic Industries PLC', source: 'DSE Official Realtime Website Feed' },
-  WALTONHIL: { price: 393.10, name: 'Walton Hi-Tech Industries PLC', source: 'DSE Official Realtime Website Feed' },
-  MARICO: { price: 2719.40, name: 'Marico Bangladesh Ltd.', source: 'DSE Official Realtime Website Feed' },
-  UNIQUEHRL: { price: 44.80, name: 'Unique Hotel & Resorts PLC', source: 'DSE Official Realtime Website Feed' },
-  BRACBANK: { price: 63.70, name: 'BRAC Bank PLC', source: 'DSE Official Realtime Website Feed' },
-  CITYBANK: { price: 24.80, name: 'City Bank PLC', source: 'DSE Official Realtime Website Feed' },
-  ADNTEL: { price: 118.50, name: 'ADN Telecom Ltd.', source: 'DSE Official Realtime Website Feed' },
-  ALLTEX: { price: 16.20, name: 'Alltex Industries PLC', source: 'DSE Official Realtime Website Feed' },
-  AGNISYSL: { price: 28.50, name: 'Agni Systems Ltd.', source: 'DSE Official Realtime Website Feed' },
-  AAMRANET: { price: 52.30, name: 'aamra networks limited', source: 'DSE Official Realtime Website Feed' },
-};
-
-export function validateStockDataIntegrity(
-  stocks: DseStockData[],
-  thresholdPct: number = 2.0
-): DataIntegrityValidationResult {
-  const anomalies: PriceAnomalyRecord[] = [];
-  let anomaliesFound = 0;
-  let hasCriticalDiscrepancy = false;
-  const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-  stocks.forEach((stock) => {
-    if (!stock.candles || stock.candles.length === 0) return;
-    const latest = stock.candles[stock.candles.length - 1];
-    const appClose = latest.close;
-
-    const symKey = stock.symbol.toUpperCase();
-    const benchmarkInfo = DSE_OFFICIAL_BENCHMARK_PRICES[symKey];
-
-    if (benchmarkInfo) {
-      const benchmarkClose = benchmarkInfo.price;
-      const diff = appClose - benchmarkClose;
-      const variancePct = (diff / benchmarkClose) * 100;
-      const absVariance = Math.abs(variancePct);
-      const isAnomalous = absVariance >= thresholdPct;
-
-      if (isAnomalous) {
-        anomaliesFound++;
-        if (absVariance > 5.0) hasCriticalDiscrepancy = true;
-      }
-
-      const severity: 'CRITICAL' | 'WARNING' | 'NORMAL' = absVariance > 5.0 ? 'CRITICAL' : isAnomalous ? 'WARNING' : 'NORMAL';
-
-      anomalies.push({
-        id: `anomaly-${stock.symbol}-${Date.now()}`,
-        symbol: stock.symbol,
-        name: stock.name || benchmarkInfo.name,
-        appClose,
-        benchmarkClose,
-        variancePct: Number(variancePct.toFixed(2)),
-        isAnomalous,
-        timestamp: nowStr,
-        severity,
-        description: isAnomalous
-          ? `App price (৳${appClose.toFixed(2)}) deviates by ${variancePct > 0 ? '+' : ''}${variancePct.toFixed(2)}% from DSE website price (৳${benchmarkClose.toFixed(2)}).`
-          : `Price matches DSE official feed within acceptable range (${variancePct > 0 ? '+' : ''}${variancePct.toFixed(2)}%).`,
-      });
-    }
-  });
-
-  return {
-    totalChecked: stocks.length,
-    anomaliesFound,
-    anomalies: anomalies.filter((a) => a.isAnomalous),
-    hasCriticalDiscrepancy,
-    checkedAt: nowStr,
-  };
-}
-
-export function autoSyncAnomalousPrices(
-  stocks: DseStockData[],
-  anomaliesToFix?: PriceAnomalyRecord[]
-): DseStockData[] {
-  const anomalyMap = new Map<string, number>();
-  if (anomaliesToFix && anomaliesToFix.length > 0) {
-    anomaliesToFix.forEach((a) => anomalyMap.set(a.symbol.toUpperCase(), a.benchmarkClose));
-  } else {
-    Object.entries(DSE_OFFICIAL_BENCHMARK_PRICES).forEach(([sym, info]) => {
-      anomalyMap.set(sym, info.price);
-    });
-  }
-
-  return stocks.map((s) => {
-    const targetPrice = anomalyMap.get(s.symbol.toUpperCase());
-    if (targetPrice && s.candles && s.candles.length > 0) {
-      const updatedCandles = [...s.candles];
-      const lastIdx = updatedCandles.length - 1;
-      const oldCandle = updatedCandles[lastIdx];
-      const open = oldCandle.open === 0 ? targetPrice : oldCandle.open;
-      const high = Math.max(oldCandle.high, targetPrice, open);
-      const low = Math.min(oldCandle.low, targetPrice, open);
-
-      updatedCandles[lastIdx] = {
-        ...oldCandle,
-        open,
-        high,
-        low,
-        close: targetPrice,
-      };
-
-      return {
-        ...s,
-        candles: updatedCandles,
-      };
-    }
-    return s;
-  });
-}
-
-
-// Basic sector momentum check - if the majority of stocks in the sector are seeing volume > 20d avg
+// Basic sector money flow check - if the majority of stocks in the sector are seeing volume > 20d avg
 
 
 export function calculateEdgeStats(signals: BreakoutSignal[]): PatternEdgeStat[] {
@@ -3174,8 +3057,8 @@ export async function runDseStockScreenerAsync(
   return allCandidates;
 }
 
-// Re-export DataIntegrityValidator component
-export { DataIntegrityValidator } from '../components/DataIntegrityValidator';
-export type { DataIntegrityValidatorProps } from '../components/DataIntegrityValidator';
+
+
+
 
 

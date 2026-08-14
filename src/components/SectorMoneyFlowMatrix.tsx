@@ -443,7 +443,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
                   1. Utility of the Sector Filter & Money Flow Matrix
                 </h4>
                 <p>
-                  On the Dhaka Stock Exchange (DSE), smart institutional money never buys all stocks simultaneously. Capital moves in <strong>Sector Waves ("Sector Rotation")</strong>. Filtering by sector isolates candidates within the leading group where money flow is concentrating before the main price breakout happens.
+                  On the Dhaka Stock Exchange (DSE), smart institutional money never buys all stocks simultaneously. Capital moves in <strong>Sector Waves ("Sector Money Flow")</strong>. Filtering by sector isolates candidates within the leading group where money flow is concentrating before the main price breakout happens.
                 </p>
               </div>
 
@@ -453,7 +453,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
                   2. Money Flow vs. Sector Market Cap Significance
                 </h4>
                 <p className="font-sans">
-                  Absolute money flow (nominal turnover in BDT) can be deceptive. A huge market cap sector (like Banks) always trades high nominal BDT volume. To identify true sector momentum, look at <strong>Turnover Expansion Ratio (5d Avg Turnover / 20d Baseline Turnover)</strong> and <strong>Money Flow Market Share</strong>.
+                  Absolute money flow (nominal turnover in BDT) can be deceptive. A huge market cap sector (like Banks) always trades high nominal BDT volume. To identify true sector money flow, look at <strong>Turnover Expansion Ratio (5d Avg Turnover / 20d Baseline Turnover)</strong> and <strong>Money Flow Market Share</strong>.
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400 pt-1">
                   <li><strong className="text-white">High Market Cap Sectors:</strong> Require sustained 1.5x+ flow expansion to move prices.</li>

@@ -196,11 +196,11 @@ export interface EarlyTrendAnalysis {
   signals: string[];
 }
 
-export interface SectorMoneyFlowStat {
+export interface SectorMomentumStat {
   sector: string;
-  momentumPct: number; // % change in aggregate BDT turnover, recent 5d vs prior 5d
-  currentVol: number;
-  pastVol: number;
+  momentumPct: number; // % change in aggregate sector BDT turnover (price x volume), recent 5 trading days vs prior 5
+  currentVol: number; // recent 5-day turnover in BDT
+  pastVol: number; // prior 5-day turnover in BDT
 }
 
 export interface ScreenerStockCandidate {
@@ -238,6 +238,5 @@ export interface ScreenerStockCandidate {
   harmonicDetails?: HarmonicPatternDetails;
   edgeSampleSize?: number;
   edgeConfidence?: 'Low' | 'Medium' | 'High';
-  sectorMoneyFlowPct?: number;
+  sectorMomentumPct?: number;
 }
-

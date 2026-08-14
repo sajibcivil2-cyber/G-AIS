@@ -12,9 +12,19 @@ async function startServer() {
 
   app.use(express.json({ limit: '20mb' }));
 
-  // BD Share Live Data Sync Endpoint for Dhaka Stock Exchange (DSE)
-  // Synthetic Gap-Fill Endpoint (Not Live Data)
-  app.post('/api/dse/synthetic-gap-fill', async (req, res) => {
+  // Synthetic Gap-Fill Endpoint for Dhaka Stock Exchange (DSE) missing trading days
+  //
+  // IMPORTANT: This does NOT fetch real market data from dsebd.org or any live source.
+  // dsebd.org's robots.txt disallows automated access, and even if it didn't, its public
+  // pages only expose today's latest snapshot price — not historical daily OHLC candles for
+  // arbitrary past dates. So there is no legitimate way to "backfill" missing historical
+  // days from a live feed. What this endpoint actually does is generate a plausible-looking
+  // synthetic random walk, anchored and clamped to the stock's last known real close, purely
+  // so the backtester has continuous candles to work with. It WILL diverge from the stock's
+  // real dsebd.org closing price on any day it filled in — that divergence is expected, not
+  // a bug. If you need real prices, re-upload a fresh historical data file instead of relying
+  // on this to catch up.
+  app.post('/api/dse/bdshare-live', async (req, res) => {
     try {
       const { stocksInfo, lastAvailableDate } = req.body;
 
@@ -44,7 +54,7 @@ async function startServer() {
       if (missingDates.length === 0) {
         return res.json({
           success: true,
-          message: 'Dataset is already fully up to date with BD Share live market feed.',
+          message: 'No missing trading days to fill — dataset already covers every trading day up to today.',
           missingDatesCount: 0,
           syncedCandles: {},
           syncedAt: new Date().toISOString(),
@@ -126,14 +136,15 @@ async function startServer() {
         syncedAt: new Date().toISOString(),
       });
     } catch (error: any) {
-      console.error('API /api/dse/synthetic-gap-fill Error:', error);
+      console.error('API /api/dse/bdshare-live Error:', error);
       return res.status(500).json({
-        error: 'Failed to generate synthetic gap-fill data.',
+        error: 'Failed to sync live BD Share market data.',
         details: error.message || String(error),
       });
     }
   });
 
+  // Vite development middleware vs Static Production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
