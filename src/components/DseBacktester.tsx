@@ -30,7 +30,7 @@ import {
   Plus,
   Upload
 } from 'lucide-react';
-import { DseStockData, DseStockCandle, BacktestConfig, BacktestSummary, BreakoutSignal, ExtractedFile, SectorMoneyFlowStat } from '../types';
+import { DseStockData, DseStockCandle, BacktestConfig, BacktestSummary, BreakoutSignal, ExtractedFile, SectorMomentumStat } from '../types';
 import {
   DSE_SAMPLE_STOCKS,
   runDseVolumeBreakoutBacktest,
@@ -43,7 +43,7 @@ import {
   evaluateStockForScreener,
   calculateEdgeStats,
   computeEquityCurve,
-  computeSectorMoneyFlow
+  computeSectorMomentum
 } from '../utils/dseBacktestEngine';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { parseZipFile } from '../utils/zipParser';
@@ -253,10 +253,10 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
   // sector-filtered view) so it reflects true market-wide rotation. Feeds directly into
   // the screener's scoring — a stock's early move is more credible when its whole sector
   // is accelerating.
-  const sectorMoneyFlow: Record<string, SectorMoneyFlowStat> = useMemo(() => computeSectorMoneyFlow(activeStockPool), [activeStockPool]);
+  const sectorMoneyFlow: Record<string, SectorMomentumStat> = useMemo(() => computeSectorMomentum(activeStockPool), [activeStockPool]);
 
   const topSectorMomentum = useMemo(() => {
-    const entries: SectorMoneyFlowStat[] = Object.values(sectorMoneyFlow).filter((s) => s.momentumPct > 0);
+    const entries: SectorMomentumStat[] = Object.values(sectorMoneyFlow).filter((s) => s.momentumPct > 0);
     if (entries.length === 0) return null;
     const top = entries.reduce((best, cur) => (cur.momentumPct > best.momentumPct ? cur : best));
     return { sector: top.sector, increasePct: top.momentumPct };
