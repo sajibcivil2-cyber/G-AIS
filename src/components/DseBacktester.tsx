@@ -50,7 +50,7 @@ import { parseZipFile } from '../utils/zipParser';
 import { DseVolumeBreakoutChart } from './DseVolumeBreakoutChart';
 import { DseStockScreener } from './DseStockScreener';
 import { PatternScanNotifier } from './PatternScanNotifier';
-import { BdShareLiveSyncBar } from './BdShareLiveSyncBar';
+import { DatabaseStatusBar } from './DatabaseStatusBar';
 import { DseStockComparer } from './DseStockComparer';
 import { SectorMoneyFlowMatrix } from './SectorMoneyFlowMatrix';
 import { BacktestSummaryDashboard } from './BacktestSummaryDashboard';
@@ -554,13 +554,10 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         </div>
       )}
 
-      {/* BD Share Live Market Data Sync Bar */}
-      <BdShareLiveSyncBar
+      {/* Local Database Status & Controls (no synthetic/fake data) */}
+      <DatabaseStatusBar
         stocks={activeStockPool}
         isDatabaseLoaded={isDatabaseLoaded}
-        onStocksUpdated={(updatedStocks) => {
-          setActiveStockPool(applySectorOverrides(updatedStocks));
-        }}
       />
 
       {/* Algorithmic Market Scan Summary Dashboard */}
