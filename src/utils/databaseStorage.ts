@@ -105,9 +105,17 @@ export function validateAndRepairStock(stock: DseStockData): { stock: DseStockDa
             continue;
           }
         } else {
-          // Last valid candle in the dataset has a massive jump. Likely a glitch, drop it.
+          // This is the most recent candle in the whole dataset — there's no future day to
+          // confirm whether it reverts. Blindly dropping it here is dangerous for THIS app
+          // specifically: the most recent trading day is exactly what an early-move
+          // screener cares about most, and a real breakout, split, rights issue, or bonus
+          // share adjustment can legitimately produce a large one-day jump. Silently
+          // deleting it would erase the exact signal this app exists to catch.
+          //
+          // Instead, keep it but flag the stock as repaired so the UI can surface
+          // "unconfirmed recent price jump — verify against source data" rather than either
+          // trusting it blindly or deleting it blindly.
           wasRepaired = true;
-          continue;
         }
       }
     }
