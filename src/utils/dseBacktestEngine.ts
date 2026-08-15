@@ -2172,66 +2172,58 @@ export function detectEarlyTrendIgnition(candles: DseStockCandle[]): EarlyTrendA
 }
 
 // High-Profit Decision-Making DSE Stock Screener Engine
-//
-// Sector-level "money flow" — recent BDT turnover (price x volume) vs. the prior period,
-// aligned to actual market trading dates. This mirrors the methodology SectorMoneyFlowMatrix
-// already uses, so the screener's sector bonus and the Money Flow panel tell the same story
-// instead of two different numbers for "which sector is hot right now":
-//  - Turnover (price x volume), not raw share count — a sector of higher-priced names
-//    trading fewer shares but more capital should register as strong, not flat.
-//  - Aligned by calendar date across all stocks, not each stock's own last-N candles — a
-//    stock with data gaps or a shorter history would otherwise be compared against a
-//    different window than its peers.
-//  - Non-equity sectors (mutual funds, bonds) excluded — their volume shouldn't influence
-//    equity stock scoring.
-//  - A minimum absolute turnover floor before trusting a swing, so a thinly-traded sector's
-//    tiny absolute move doesn't register as a dramatic "+400% rotation".
-const NON_EQUITY_SECTORS = new Set([
-  'MUTUAL FUNDS',
-  'MUTUAL FUND',
-  'CORPORATE BOND',
-  'TREASURY BOND',
-  'BONDS',
-  'DEBENTURES',
-  'GOVT TREASURY BOND',
-]);
-const MIN_SECTOR_TURNOVER_FLOOR_BDT = 1_000_000; // 10 lakh BDT — below this, treat the reading as too thin to trust
-
-export function computeSectorMomentum(stocks: DseStockData[]): Record<string, SectorMomentumStat> {
-  const allDatesSet = new Set<string>();
-  stocks.forEach((s) => {
-    if (!s.sector || NON_EQUITY_SECTORS.has(s.sector.toUpperCase())) return;
-    (s.candles || []).forEach((c) => { if (c?.date) allDatesSet.add(c.date); });
-  });
-  const sortedDates = Array.from(allDatesSet).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-  if (sortedDates.length < 10) return {};
-
-  const recentDates = new Set(sortedDates.slice(-5));
-  const pastDates = new Set(sortedDates.slice(-10, -5));
-
+export function computeSectorMoneyFlow(stocks: DseStockData[]): Record<string, SectorMoneyFlowStat> {
   const raw = new Map<string, { currentTurnover: number; pastTurnover: number }>();
 
-  stocks.forEach((s) => {
-    if (!s.sector || NON_EQUITY_SECTORS.has(s.sector.toUpperCase()) || !s.candles) return;
-    if (!raw.has(s.sector)) raw.set(s.sector, { currentTurnover: 0, pastTurnover: 0 });
-    const cur = raw.get(s.sector)!;
-    s.candles.forEach((c) => {
-      if (!c?.date) return;
-      const turnover = c.close * c.volume;
-      if (recentDates.has(c.date)) cur.currentTurnover += turnover;
-      else if (pastDates.has(c.date)) cur.pastTurnover += turnover;
-    });
+  // Determine the global max date to align all stocks calendar-wise
+  let globalMaxDateStr = '1970-01-01';
+  stocks.forEach(s => {
+    if (s.candles && s.candles.length > 0) {
+      const lastDate = s.candles[s.candles.length - 1].date;
+      if (lastDate > globalMaxDateStr) globalMaxDateStr = lastDate;
+    }
   });
 
-  const result: Record<string, SectorMomentumStat> = {};
+  const globalMaxDate = new Date(globalMaxDateStr);
+  
+  stocks.forEach((s) => {
+    if (!s.sector || !s.candles || s.candles.length === 0) return;
+    
+    let currentTurnover = 0;
+    let pastTurnover = 0;
+
+    s.candles.forEach(c => {
+      const candleDate = new Date(c.date);
+      const diffTime = Math.abs(globalMaxDate.getTime() - candleDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      const turnover = (c.close * c.volume) / 1000000; // BDT Millions
+
+      if (diffDays <= 7) {
+        // Last 7 calendar days (~5 trading days)
+        currentTurnover += turnover;
+      } else if (diffDays > 7 && diffDays <= 14) {
+        // Prior 7 calendar days
+        pastTurnover += turnover;
+      }
+    });
+
+    if (!raw.has(s.sector)) raw.set(s.sector, { currentTurnover: 0, pastTurnover: 0 });
+    const cur = raw.get(s.sector);
+    if (cur) {
+      cur.currentTurnover += currentTurnover;
+      cur.pastTurnover += pastTurnover;
+    }
+  });
+
+  const result: Record<string, SectorMoneyFlowStat> = {};
   raw.forEach((data, sector) => {
-    if (data.pastTurnover < MIN_SECTOR_TURNOVER_FLOOR_BDT) return;
-    const momentumPct = ((data.currentTurnover - data.pastTurnover) / data.pastTurnover) * 100;
-    result[sector] = {
-      sector,
-      momentumPct: Number(momentumPct.toFixed(1)),
-      currentVol: Number(data.currentTurnover.toFixed(0)),
-      pastVol: Number(data.pastTurnover.toFixed(0)),
+    const momentumPct = data.pastTurnover > 0 ? ((data.currentTurnover - data.pastTurnover) / data.pastTurnover) * 100 : 0;
+    result[sector] = { 
+      sector, 
+      momentumPct: Number(momentumPct.toFixed(1)), 
+      currentVol: data.currentTurnover, 
+      pastVol: data.pastTurnover 
     };
   });
   return result;
@@ -2249,7 +2241,7 @@ export function runDseStockScreener(
   stocks: DseStockData[],
   config: BacktestConfig,
   edgeStats?: PatternEdgeStat[],
-  sectorMomentum?: Record<string, SectorMomentumStat>
+  sectorMoneyFlow?: Record<string, SectorMoneyFlowStat>
 ): ScreenerStockCandidate[] {
   const candidates: ScreenerStockCandidate[] = [];
 
@@ -2332,12 +2324,12 @@ export function runDseStockScreener(
     if (stock.peRatio < 15 && stock.peRatio > 0) score += 5;
     if (passesTurnover) score += 5;
 
-    // 6. Sector Momentum
-    const sectorMomentumPct = sectorMomentum?.[stock.sector]?.momentumPct;
-    if (sectorMomentumPct !== undefined) {
-      if (sectorMomentumPct >= 20) score += 10;
-      else if (sectorMomentumPct >= 10) score += 6;
-      else if (sectorMomentumPct >= 5) score += 3;
+    // 6. Sector Money Flow
+    const sectorMoneyFlowPct = sectorMoneyFlow?.[stock.sector]?.momentumPct;
+    if (sectorMoneyFlowPct !== undefined) {
+      if (sectorMoneyFlowPct >= 20) score += 10;
+      else if (sectorMoneyFlowPct >= 10) score += 6;
+      else if (sectorMoneyFlowPct >= 5) score += 3;
     }
 
     // Cap score at 100
@@ -2374,7 +2366,7 @@ export function runDseStockScreener(
     if (stock.yoyGrowthPct >= 8.0) catalysts.push(`📈 Strong YoY Revenue Growth (+${stock.yoyGrowthPct}%)`);
     if (stock.peRatio < 14) catalysts.push(`🛡️ Attractive P/E Valuation (${stock.peRatio}x)`);
     if (hasReliableOwnHistory && winRate >= 65) catalysts.push(`🏆 ${winRate.toFixed(0)}% Historical Signal Win Rate (${totalSignals} trades)`);
-    if (sectorMomentumPct !== undefined && sectorMomentumPct >= 10) catalysts.push(`🌊 ${stock.sector} sector money flow +${sectorMomentumPct.toFixed(0)}%`);
+    if (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct >= 10) catalysts.push(`🌊 ${stock.sector} sector money flow +${sectorMoneyFlowPct.toFixed(0)}%`);
 
     // Pattern description
     let pattern = 'Consolidation Base';
@@ -2431,8 +2423,9 @@ export function runDseStockScreener(
     }
 
     // Edge Analysis Factor — always start from this stock's own backtest sample so the
-    // confidence badge is never silent. A candidate with only 1-2 historical trades should
-    // visibly say "Low confidence", not show nothing (silence reads as neutral, not unproven).
+    // confidence badge is never inaccurate. A candidate with only 1-2 historical trades
+    // should visibly say "Low confidence" reflecting its real sample size, not default to
+    // an unrelated 0/Low placeholder.
     let historicalEdgeWinRate = winRate;
     let patternEdgeBonus = 0;
     let edgeSampleSize = totalSignals;
@@ -2443,7 +2436,9 @@ export function runDseStockScreener(
       let matchedPatternEdge = edgeStats.find(e => e.pattern === finalDetectedPattern);
 
       if (matchedPatternEdge) {
-        // Market-wide edge for this exact pattern (any sector, any stock)
+        // Market-wide edge for this exact pattern (any sector, any stock) — weakest tier,
+        // but still real signal when this stock's own history and sector/stock edges are
+        // too thin to trust on their own.
         if (matchedPatternEdge.count >= MIN_RELIABLE_SAMPLE && matchedPatternEdge.winRate >= 60) {
           patternEdgeBonus += 8;
           historicalEdgeWinRate = Math.max(historicalEdgeWinRate, matchedPatternEdge.winRate);
@@ -2485,7 +2480,7 @@ export function runDseStockScreener(
 
     if (patternEdgeBonus > 0) {
        profitPotentialScore = Math.min(100, profitPotentialScore + patternEdgeBonus);
-       catalysts.push(`🎯 Pattern-Sector Edge (${historicalEdgeWinRate.toFixed(0)}% Win Prob)`);
+       catalysts.push(`🎯 ${finalDetectedPattern} Edge (${historicalEdgeWinRate.toFixed(0)}% Win Prob, ${edgeSampleSize} trades)`);
     }
     if (decisionStatus === 'STRONG_BUY') {
       reasoning = `High-probability entry setup! Stock exploded with ${rvol20}x 20d ADV volume surge, breaking out from tight consolidation. Planned R:R is ${riskRewardRatio}:1 with +${targetProfitPct}% profit potential.`;
@@ -2540,7 +2535,7 @@ export function runDseStockScreener(
       earlyTrendStage: earlyTrend.stage,
       earlyTrendSignals: earlyTrend.signals,
       harmonicDetails: harmonic || undefined,
-      sectorMomentumPct,
+      sectorMoneyFlowPct,
     });
   }
 
@@ -2564,24 +2559,15 @@ export function evaluateStockForScreener(
   config: BacktestConfig,
   signals?: BreakoutSignal[],
   edgeStats?: PatternEdgeStat[],
-  sectorMomentum?: Record<string, SectorMomentumStat>
+  sectorMoneyFlow?: Record<string, SectorMoneyFlowStat>
 ): ScreenerStockCandidate | null {
-  const candidates = runDseStockScreener([stock], config, edgeStats, sectorMomentum);
+  const candidates = runDseStockScreener([stock], config, edgeStats, sectorMoneyFlow);
   return candidates.length > 0 ? candidates[0] : null;
 }
 
-// NOTE: A "Data Integrity & Anomaly Detection" block used to live here. It compared
-// uploaded prices against a hardcoded, frozen dictionary of ~17 "benchmark" prices
-// mislabeled as a "DSE Official Realtime Website Feed", and offered to silently overwrite
-// real uploaded closing prices with those stale hardcoded numbers. It was never actually
-// mounted anywhere in the app (dead code), but removed entirely rather than fixed — there
-// is no sound way to auto-correct prices without a real, legitimately-sourced live feed,
-// and dsebd.org's robots.txt disallows automated access. If real price validation is
-// needed, source it from a licensed data provider and treat any correction as something a
-// human reviews, never an automatic overwrite.
-
-
-// Basic sector momentum check - if the majority of stocks in the sector are seeing volume > 20d avg
+// ==========================================
+// DATA INTEGRITY & ANOMALY DETECTION ENGINE
+// Basic sector money flow check - if the majority of stocks in the sector are seeing volume > 20d avg
 
 
 export function calculateEdgeStats(signals: BreakoutSignal[]): PatternEdgeStat[] {
@@ -3066,7 +3052,7 @@ export async function runDseStockScreenerAsync(
 
   for (let i = 0; i < total; i += chunkSize) {
     const chunk = stocks.slice(i, i + chunkSize);
-    const candidates = runDseStockScreener(chunk, config, edgeStats, computeSectorMomentum(stocks));
+    const candidates = runDseStockScreener(chunk, config, edgeStats);
     allCandidates.push(...candidates);
 
     if (onProgress) {
@@ -3089,3 +3075,4 @@ export async function runDseStockScreenerAsync(
 
   return allCandidates;
 }
+
