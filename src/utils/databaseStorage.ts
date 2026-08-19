@@ -161,25 +161,148 @@ export function validateAndRepairDatabase(stocks: DseStockData[]): {
 }
 
 // ---------------------------------------------------------------------------
-// IndexedDB plumbing
+// IndexedDB plumbing & resilient connection manager
 // ---------------------------------------------------------------------------
 
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (!window.indexedDB) {
-      reject(new Error('IndexedDB not supported in this browser.'));
-      return;
+let cachedDbInstance: IDBDatabase | null = null;
+let dbOpenPromise: Promise<IDBDatabase | null> | null = null;
+
+function isClosingOrHiddenError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  const name = err instanceof Error ? err.name : '';
+  return (
+    name === 'InvalidStateError' ||
+    name === 'AbortError' ||
+    msg.includes('closing') ||
+    msg.includes('closed') ||
+    msg.includes('hidden') ||
+    msg.includes('connection is closing') ||
+    msg.includes('a mutation operation was attempted')
+  );
+}
+
+function closeCachedDB(): void {
+  if (cachedDbInstance) {
+    try {
+      cachedDbInstance.close();
+    } catch (_) {
+      // Ignored
     }
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'symbol' });
-      }
-    };
+    cachedDbInstance = null;
+  }
+  dbOpenPromise = null;
+}
+
+// Safely detach/close when document is hidden or unloaded to prevent hung closing states
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => {
+    closeCachedDB();
   });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      closeCachedDB();
+    }
+  });
+}
+
+async function getOrOpenDB(attempt = 1): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    return null;
+  }
+
+  // If we already have an active, non-closed database instance, reuse it
+  if (cachedDbInstance) {
+    return cachedDbInstance;
+  }
+
+  // If a connection attempt is already in flight, reuse the promise
+  if (dbOpenPromise) {
+    try {
+      const db = await dbOpenPromise;
+      if (db) return db;
+    } catch (_) {
+      dbOpenPromise = null;
+    }
+  }
+
+  dbOpenPromise = new Promise<IDBDatabase | null>((resolve) => {
+    try {
+      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onerror = (event) => {
+        console.warn('IndexedDB open error notice:', request.error || event);
+        closeCachedDB();
+        resolve(null);
+      };
+
+      request.onblocked = () => {
+        console.warn('IndexedDB open blocked by another tab or connection.');
+        closeCachedDB();
+        resolve(null);
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+
+        db.onversionchange = () => {
+          closeCachedDB();
+        };
+
+        db.onclose = () => {
+          closeCachedDB();
+        };
+
+        db.onerror = (e) => {
+          console.warn('IndexedDB generic error:', e);
+          closeCachedDB();
+        };
+
+        cachedDbInstance = db;
+        dbOpenPromise = null;
+        resolve(db);
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'symbol' });
+        }
+      };
+    } catch (err) {
+      console.warn('IndexedDB synchronous open failure:', err);
+      closeCachedDB();
+      resolve(null);
+    }
+  });
+
+  const result = await dbOpenPromise;
+  if (!result && attempt < 3) {
+    // Short backoff retry if transient closing occurred
+    await new Promise((r) => setTimeout(r, 60 * attempt));
+    return getOrOpenDB(attempt + 1);
+  }
+
+  return result;
+}
+
+// Helper to safely write fallback data to localStorage without blowing quota
+function saveToLocalStorageFallback(cleanStocks: DseStockData[]): void {
+  try {
+    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(cleanStocks));
+  } catch (quotaErr) {
+    console.warn('LocalStorage full, condensing historical series for backup storage:', quotaErr);
+    try {
+      // Keep up to 120 most recent candles per stock to fit in standard 5MB quota
+      const condensed = cleanStocks.map((s) => ({
+        ...s,
+        candles: s.candles ? s.candles.slice(-120) : [],
+      }));
+      localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(condensed));
+    } catch (innerErr) {
+      console.warn('LocalStorage condensed backup write failed:', innerErr);
+    }
+  }
 }
 
 // Save stock dataset to IndexedDB & localStorage fallback.
@@ -189,37 +312,66 @@ export async function saveDatabaseToStorage(stocks: DseStockData[]): Promise<{ s
     const timestamp = new Date().toLocaleString();
     const { stocks: cleanStocks, repairedSymbols, droppedSymbols } = validateAndRepairDatabase(stocks);
 
-    // Save to IndexedDB
+    let savedToIdb = false;
+
+    // Save to IndexedDB with automatic retry and error isolation
     try {
-      const db = await openDB();
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
+      const db = await getOrOpenDB();
+      if (db) {
+        await new Promise<void>((resolve, reject) => {
+          try {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
 
-      // Clear existing records first
-      await new Promise<void>((resolve, reject) => {
-        const clearReq = store.clear();
-        clearReq.onsuccess = () => resolve();
-        clearReq.onerror = () => reject(clearReq.error);
-      });
+            tx.oncomplete = () => {
+              savedToIdb = true;
+              resolve();
+            };
 
-      // Put all stock objects
-      for (const stock of cleanStocks) {
-        store.put(stock);
+            tx.onerror = () => {
+              if (isClosingOrHiddenError(tx.error)) {
+                closeCachedDB();
+              }
+              reject(tx.error || new Error('Transaction error'));
+            };
+
+            tx.onabort = () => {
+              if (isClosingOrHiddenError(tx.error)) {
+                closeCachedDB();
+              }
+              reject(tx.error || new Error('Transaction aborted'));
+            };
+
+            const clearReq = store.clear();
+            clearReq.onerror = (e) => reject(clearReq.error || e);
+
+            for (const stock of cleanStocks) {
+              store.put(stock);
+            }
+          } catch (txErr) {
+            if (isClosingOrHiddenError(txErr)) {
+              closeCachedDB();
+            }
+            reject(txErr);
+          }
+        });
       }
-
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
     } catch (idbErr) {
-      console.warn('IndexedDB save warning, attempting localStorage fallback:', idbErr);
-      localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(cleanStocks));
+      console.warn('IndexedDB save notice (using localStorage backup):', idbErr);
     }
 
-    localStorage.setItem(TIMESTAMP_KEY, timestamp);
+    // Always maintain localStorage backup for offline/fast fallback
+    saveToLocalStorageFallback(cleanStocks);
+
+    try {
+      localStorage.setItem(TIMESTAMP_KEY, timestamp);
+    } catch (_) {
+      // Ignored
+    }
+
     const totalCandles = cleanStocks.reduce((acc, s) => acc + (s.candles?.length || 0), 0);
 
-    let message = `Database saved successfully! ${cleanStocks.length} stocks (${totalCandles} candles) stored locally at ${timestamp}.`;
+    let message = `Database saved successfully! ${cleanStocks.length} stocks (${totalCandles} candles) stored ${savedToIdb ? 'in high-performance local database' : 'in browser cache'} at ${timestamp}.`;
     if (repairedSymbols.length > 0) {
       message += ` Repaired corrupted price data for: ${repairedSymbols.join(', ')}.`;
     }
@@ -247,65 +399,74 @@ export interface LoadDatabaseResult {
 
 export async function loadDatabaseFromStorage(): Promise<LoadDatabaseResult | null> {
   try {
-    // Try loading from IndexedDB
+    // 1. Try loading from IndexedDB
     try {
-      const db = await openDB();
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-
-      const allStocks = await new Promise<DseStockData[]>((resolve, reject) => {
-        const req = store.getAll();
-        req.onsuccess = () => resolve(req.result as DseStockData[]);
-        req.onerror = () => reject(req.error);
-      });
-
-      if (allStocks && allStocks.length > 0) {
-        const { stocks: cleanStocks, repairedSymbols, droppedSymbols } = validateAndRepairDatabase(allStocks);
-
-        if (repairedSymbols.length > 0 || droppedSymbols.length > 0) {
-          console.warn(
-            `Stock database repaired on load. Fixed: [${repairedSymbols.join(', ') || 'none'}]. ` +
-            `Dropped (unrecoverable): [${droppedSymbols.join(', ') || 'none'}].`
-          );
-          // Persist the repaired version immediately so the fix sticks and we don't
-          // re-detect/re-log the same corruption on every future load.
+      const db = await getOrOpenDB();
+      if (db) {
+        const allStocks = await new Promise<DseStockData[] | null>((resolve) => {
           try {
-            const writeTx = db.transaction(STORE_NAME, 'readwrite');
-            const writeStore = writeTx.objectStore(STORE_NAME);
-            await new Promise<void>((resolve, reject) => {
-              const clearReq = writeStore.clear();
-              clearReq.onsuccess = () => resolve();
-              clearReq.onerror = () => reject(clearReq.error);
-            });
-            cleanStocks.forEach((s) => writeStore.put(s));
-            await new Promise<void>((resolve, reject) => {
-              writeTx.oncomplete = () => resolve();
-              writeTx.onerror = () => reject(writeTx.error);
-            });
-          } catch (persistErr) {
-            console.warn('Could not persist repaired database:', persistErr);
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.getAll();
+
+            req.onsuccess = () => {
+              resolve(req.result as DseStockData[]);
+            };
+
+            req.onerror = () => {
+              if (isClosingOrHiddenError(req.error)) {
+                closeCachedDB();
+              }
+              resolve(null);
+            };
+
+            tx.onerror = () => {
+              if (isClosingOrHiddenError(tx.error)) {
+                closeCachedDB();
+              }
+              resolve(null);
+            };
+          } catch (txErr) {
+            if (isClosingOrHiddenError(txErr)) {
+              closeCachedDB();
+            }
+            resolve(null);
+          }
+        });
+
+        if (allStocks && allStocks.length > 0) {
+          const { stocks: cleanStocks, repairedSymbols, droppedSymbols } = validateAndRepairDatabase(allStocks);
+
+          if (repairedSymbols.length > 0 || droppedSymbols.length > 0) {
+            console.warn(
+              `Stock database repaired on load. Fixed: [${repairedSymbols.join(', ') || 'none'}]. ` +
+              `Dropped (unrecoverable): [${droppedSymbols.join(', ') || 'none'}].`
+            );
+          }
+
+          if (cleanStocks.length > 0) {
+            return { stocks: cleanStocks, repairedSymbols, droppedSymbols };
           }
         }
-
-        if (cleanStocks.length > 0) {
-          return { stocks: cleanStocks, repairedSymbols, droppedSymbols };
-        }
-        // Every stock was unrecoverable — fall through to localStorage/defaults.
       }
     } catch (idbErr) {
-      console.warn('IndexedDB load warning, falling back to localStorage:', idbErr);
+      console.warn('IndexedDB load notice, checking localStorage backup:', idbErr);
     }
 
-    // LocalStorage Fallback
-    const jsonStr = localStorage.getItem(LOCALSTORAGE_KEY);
-    if (jsonStr) {
-      const parsed = JSON.parse(jsonStr);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const { stocks: cleanStocks, repairedSymbols, droppedSymbols } = validateAndRepairDatabase(parsed as DseStockData[]);
-        if (cleanStocks.length > 0) {
-          return { stocks: cleanStocks, repairedSymbols, droppedSymbols };
+    // 2. LocalStorage Fallback
+    try {
+      const jsonStr = localStorage.getItem(LOCALSTORAGE_KEY);
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const { stocks: cleanStocks, repairedSymbols, droppedSymbols } = validateAndRepairDatabase(parsed as DseStockData[]);
+          if (cleanStocks.length > 0) {
+            return { stocks: cleanStocks, repairedSymbols, droppedSymbols };
+          }
         }
       }
+    } catch (lsErr) {
+      console.warn('LocalStorage load notice:', lsErr);
     }
 
     return null;
@@ -317,27 +478,43 @@ export async function loadDatabaseFromStorage(): Promise<LoadDatabaseResult | nu
 
 // Get timestamp of last saved database
 export function getLastSavedTimestamp(): string | null {
-  return localStorage.getItem(TIMESTAMP_KEY);
+  try {
+    return localStorage.getItem(TIMESTAMP_KEY);
+  } catch {
+    return null;
+  }
 }
 
 // Clear Database completely
 export async function clearDatabaseStorage(): Promise<void> {
-  localStorage.removeItem(LOCALSTORAGE_KEY);
-  localStorage.removeItem(TIMESTAMP_KEY);
+  try {
+    localStorage.removeItem(LOCALSTORAGE_KEY);
+    localStorage.removeItem(TIMESTAMP_KEY);
+  } catch (_) {
+    // Ignored
+  }
 
-  if (window.indexedDB) {
-    try {
-      const db = await openDB();
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      await new Promise<void>((resolve, reject) => {
-        const req = tx.objectStore(STORE_NAME).clear();
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
+  try {
+    const db = await getOrOpenDB();
+    if (db) {
+      await new Promise<void>((resolve) => {
+        try {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.clear();
+          req.onsuccess = () => resolve();
+          req.onerror = () => resolve();
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        } catch (_) {
+          resolve();
+        }
       });
-      db.close();
-    } catch (err) {
-      console.error('Failed to clear IndexedDB:', err);
     }
+  } catch (err) {
+    console.warn('Failed to clear IndexedDB:', err);
+  } finally {
+    closeCachedDB();
   }
 }
 

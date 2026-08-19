@@ -91,7 +91,13 @@ export type TechnicalPatternType =
   | 'Rounding Bottom'
   | 'MA 10/20/30 Crossover'
   | 'Bullish Pennant'
-  | 'Symmetrical Triangle';
+  | 'Symmetrical Triangle'
+  | 'NR7 Breakout'
+  | '20 EMA Pullback Bounce'
+  | 'Volume Dry-up (No Supply)'
+  | 'Bullish Engulfing Reversal'
+  | 'Morning Star Reversal'
+  | 'RSI Oversold Momentum Rebound';
 
 export interface EdgeStat {
   count: number;
@@ -141,6 +147,7 @@ export interface BreakoutSignal {
   riskRewardRatio: number; // Planned Target:Stop ratio (e.g. 3.0 = 3.00:1)
   realizedRiskRewardRatio: number; // Historical Peak Return / Max Drawdown ratio
   harmonicDetails?: HarmonicPatternDetails;
+  warningFlags?: string[];
 }
 
 export type TradeRecord = BreakoutSignal;
@@ -203,6 +210,78 @@ export interface SectorMoneyFlowStat {
   pastVol: number;
 }
 
+export interface DseCircuitInfo {
+  circuitLimitPct: number;
+  upperCircuitPrice: number;
+  lowerCircuitPrice: number;
+  isNearUpperCircuit: boolean;
+  isAtUpperCircuit: boolean;
+  isNearLowerCircuit: boolean;
+  isAtLowerCircuit: boolean;
+  changeFromPrevClosePct: number;
+}
+
+export type DseCategory = 'A' | 'B' | 'N' | 'Z';
+
+export interface DseMarketProfile {
+  category: DseCategory;
+  settlementDays: 'T+2' | 'T+3';
+  isMarginable: boolean;
+  floatProfile: 'Institutional Grade' | 'Mid Float' | 'Low Float Speculative';
+  manipulationRiskScore: number; // 0 - 100
+  circuitInfo: DseCircuitInfo;
+}
+
+export interface RealisticTradeTarget {
+  tier: 1 | 2 | 3;
+  label: string;
+  price: number;
+  gainPct: number;
+  gainBdt: number;
+  allocationPct: number;
+  rewardRiskRatio: number;
+  rationale: string;
+}
+
+export interface RealisticTradePlan {
+  idealEntryPrice: number;
+  entryRangeMin: number;
+  entryRangeMax: number;
+  maxChasePrice: number;
+  isWithinBuyZone: boolean;
+  isOverextended: boolean;
+  chasePctFromPivot: number;
+  entryTrigger: string;
+  entryStyle: 'Breakout Pullback' | 'Momentum Breakout' | 'Pocket Pivot Accumulation' | 'Harmonic Pivot';
+
+  stopLossPrice: number;
+  stopLossPct: number;
+  riskAmountBdt: number;
+  stopLossType: 'Structural Swing Low' | 'Volatility ATR (1.5x)' | '20-EMA Buffer Support';
+  invalidationCriteria: string;
+  atr14: number;
+  atrPct: number;
+  swingLow5d: number;
+
+  targets: RealisticTradeTarget[];
+  weightedAvgTargetGainPct: number;
+  weightedTargetPrice: number;
+
+  estimatedFrictionPct: number;
+  netTargetGainPct: number;
+  netRiskRewardRatio: number;
+
+  suggestedAccountRiskPct: number;
+  recommendedSharesFor100k: number;
+  recommendedCapitalFor100k: number;
+  maxDailyTurnoverCapShares: number;
+  isLiquidityConstrained: boolean;
+
+  holdingPeriodDays: string;
+  trailingStopRule: string;
+  settlementSafetyNote: string;
+}
+
 export interface ScreenerStockCandidate {
   symbol: string;
   stockName: string;
@@ -239,5 +318,43 @@ export interface ScreenerStockCandidate {
   edgeSampleSize?: number;
   edgeConfidence?: 'Low' | 'Medium' | 'High';
   sectorMoneyFlowPct?: number;
+  warningFlags?: string[];
+  dseProfile?: DseMarketProfile;
+  sectorMomentumPct?: number;
+  tradePlan?: RealisticTradePlan;
+  volumeFootprint?: VolumeFootprintMetrics;
+}
+
+export type VolumePatternFootprintType =
+  | 'Pocket Pivot (Kacher/Morales)'
+  | 'Volume Dry-Up (VDU)'
+  | 'OBV Leading Breakout'
+  | 'VSA Absorption Bar (Stopping Vol)'
+  | 'VSA No Supply Test'
+  | 'CMF Smart Money Inflow'
+  | 'Anchored VWAP Reclaim'
+  | 'Standard Volume Expansion';
+
+export interface VolumeFootprintMetrics {
+  compositeScore: number; // 0 - 100
+  footprintLabel: 'Institutional Accumulation' | 'Stealth Smart Money' | 'Volume Dry-Up Setup' | 'Absorption Test' | 'Neutral Flow';
+  primaryPattern: VolumePatternFootprintType;
+  patternsDetected: string[];
+  isPocketPivot: boolean;
+  pocketPivotRatio: number;
+  isVdu: boolean;
+  vduRatio: number;
+  obv20dHigh: boolean;
+  obvSlope: 'Bullish Divergence' | 'Rising' | 'Flat' | 'Bearish';
+  obvTrendValue: number;
+  cmf20: number;
+  cmfStatus: 'Strong Inflow (+0.15+)' | 'Moderate Inflow' | 'Neutral' | 'Outflow';
+  vsaSignal: 'Absorption Bar' | 'No Supply Test' | 'Stopping Volume' | 'Effort vs Result Win' | 'Normal';
+  vsaDescription: string;
+  anchoredVwap: number;
+  priceVsAvwapPct: number;
+  isAboveAvwap: boolean;
+  turnoverSurgeBdtMillion: number;
+  turnoverSurgeMultiplier: number;
 }
 

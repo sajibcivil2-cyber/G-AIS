@@ -25,7 +25,14 @@ import {
   PatternEdgeStat,
   StopLossPostMortemReport,
   StopLossFailurePattern,
-  SectorMoneyFlowStat
+  SectorMoneyFlowStat,
+  DseCategory,
+  DseCircuitInfo,
+  DseMarketProfile,
+  RealisticTradePlan,
+  RealisticTradeTarget,
+  VolumeFootprintMetrics,
+  VolumePatternFootprintType
 } from '../types';
 
 // Realistic Sample Datasets for Dhaka Stock Exchange (DSE) Companies
@@ -805,6 +812,109 @@ export function detectTechnicalPattern(
     }
   }
 
+  // 10. NR7 Breakout (Narrowest Range in 7 Days)
+  if (n >= 7) {
+    const last7 = priorCandles.slice(-7);
+    const ranges = last7.map(c => c.high - c.low);
+    const nr7DayRange = ranges[6];
+    const isNR7 = ranges.slice(0, 6).every(r => r > nr7DayRange);
+    const breakoutCandle = candles[breakoutIdx];
+    
+    if (isNR7 && breakoutCandle.close > last7[6].high) {
+      return {
+        detectedPattern: 'NR7 Breakout',
+        patternConfidence: 92,
+        patternDescription: `NR7 Breakout: Volatility contracted to the narrowest range in 7 days before expanding upwards.`,
+      };
+    }
+  }
+
+  // 11. 20 EMA Pullback Bounce
+  if (n >= 25) {
+    const ma20 = priorCandles.slice(-20).reduce((sum, c) => sum + c.close, 0) / 20;
+    const lastClose = priorCandles[n-1].close;
+    const lastLow = priorCandles[n-1].low;
+    const breakoutCandle = candles[breakoutIdx];
+    
+    if (lastLow <= ma20 * 1.015 && lastClose >= ma20 * 0.985 && breakoutCandle.close > lastClose) {
+        return {
+          detectedPattern: '20 EMA Pullback Bounce',
+          patternConfidence: 88,
+          patternDescription: `Price pulled back to retest the 20-day moving average and successfully bounced on volume.`,
+        };
+    }
+  }
+
+  // 12. Volume Dry-up (No Supply)
+  if (n >= 20) {
+    const avgVol20 = priorCandles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20;
+    const last3VolMax = Math.max(...priorCandles.slice(-3).map(c => c.volume));
+    
+    if (last3VolMax < avgVol20 * 0.5) {
+       return {
+          detectedPattern: 'Volume Dry-up (No Supply)',
+          patternConfidence: 87,
+          patternDescription: `Volume dried up to less than 50% of the 20-day average, indicating exhaustion of sellers before the surge.`,
+       };
+    }
+  }
+
+  // 13. Bullish Engulfing Reversal
+  if (n >= 3 && breakoutIdx >= 1) {
+    const prevCandle = candles[breakoutIdx - 1];
+    const currCandle = candles[breakoutIdx];
+    const isPrevRed = prevCandle.close < prevCandle.open;
+    const isCurrGreen = currCandle.close > currCandle.open;
+    const prevBody = Math.abs(prevCandle.close - prevCandle.open);
+    const currBody = Math.abs(currCandle.close - currCandle.open);
+
+    if (isPrevRed && isCurrGreen && currCandle.open <= prevCandle.close && currCandle.close >= prevCandle.open && currBody > prevBody * 1.2) {
+      return {
+        detectedPattern: 'Bullish Engulfing Reversal',
+        patternConfidence: 90,
+        patternDescription: `Powerful Bullish Engulfing candle completely swallowing previous bear day on heavy volume.`,
+      };
+    }
+  }
+
+  // 14. Morning Star Reversal (3-Candle Bottoming Structure)
+  if (breakoutIdx >= 2) {
+    const c1 = candles[breakoutIdx - 2];
+    const c2 = candles[breakoutIdx - 1];
+    const c3 = candles[breakoutIdx];
+    const isC1Bear = c1.close < c1.open && (c1.open - c1.close) / c1.open > 0.015;
+    const isC2Doji = Math.abs(c2.close - c2.open) / (c2.open || 1) < 0.012 && c2.low < c1.low;
+    const isC3Bull = c3.close > c3.open && c3.close > (c1.open + c1.close) / 2;
+
+    if (isC1Bear && isC2Doji && isC3Bull) {
+      return {
+        detectedPattern: 'Morning Star Reversal',
+        patternConfidence: 93,
+        patternDescription: `Classic 3-candle Morning Star bottoming reversal confirming end of selling pressure.`,
+      };
+    }
+  }
+
+  // 15. RSI Oversold Momentum Rebound
+  if (breakoutIdx >= 15) {
+    const rsiCandles = candles.slice(Math.max(0, breakoutIdx - 14), breakoutIdx + 1);
+    let gains = 0;
+    let losses = 0;
+    for (let j = 1; j < rsiCandles.length; j++) {
+      const d = rsiCandles[j].close - rsiCandles[j - 1].close;
+      if (d >= 0) gains += d;
+      else losses -= d;
+    }
+    const rsi = losses === 0 ? 100 : 100 - (100 / (1 + (gains / (losses || 1))));
+    if (rsi < 42 && candles[breakoutIdx].close > candles[breakoutIdx].open) {
+      return {
+        detectedPattern: 'RSI Oversold Momentum Rebound',
+        patternConfidence: 89,
+        patternDescription: `RSI momentum rebound from oversold zone (${rsi.toFixed(1)}) with strong volume confirmation.`,
+      };
+    }
+  }
+
   // Default Box Range Consolidation
   const boxHigh = Math.max(...priorCandles.map((c) => c.high));
   const boxLow = Math.min(...priorCandles.map((c) => c.low));
@@ -839,8 +949,46 @@ export function runDseVolumeBreakoutBacktest(
 
       const volumeRatio = current.volume / (avgVol20 || 1);
 
-      // 2. Volume Breakout Condition
-      if (volumeRatio >= config.volumeSurgeMultiplier && current.close > current.open) {
+      // Stage 2 Uptrend Filter (Weinstein/Minervini)
+      const past50 = candles.slice(Math.max(0, i - 49), i + 1);
+      const past200 = candles.slice(Math.max(0, i - 199), i + 1);
+      const sma50 = past50.length > 0 ? past50.reduce((acc, c) => acc + c.close, 0) / past50.length : current.close;
+      const sma200 = past200.length >= 100 ? past200.reduce((acc, c) => acc + c.close, 0) / past200.length : null;
+      const isStage2Uptrend = sma200 !== null ? ((sma50 > sma200) && (current.close > sma50)) : (current.close > sma50);
+
+      // Pocket Pivot / Early Breakout Detection
+      // Catch volume entering the base before breaking the macro high
+      const past10 = candles.slice(Math.max(0, i - 10), i);
+      const maxDownVolume10 = past10.filter(c => c.close < c.open).reduce((max, c) => Math.max(max, c.volume), 0);
+      const isPocketPivot = current.close > current.open && current.volume > maxDownVolume10 && maxDownVolume10 > 0;
+
+      // Volatility Contraction (VCP) Dry-up Check
+      // Pre-breakout volume must be exhausted
+      const past3 = candles.slice(Math.max(0, i - 3), i);
+      const maxVol3 = past3.length ? Math.max(...past3.map(c => c.volume)) : current.volume;
+      const isVcpDryUp = maxVol3 < avgVol20 * 0.75;
+
+      // Check Macro Base Pattern (preceding 20-60 days)
+      const pastMacro = candles.slice(Math.max(0, i - config.macroBaseDays), i);
+      const macroHigh = pastMacro.length ? Math.max(...pastMacro.map((c) => c.high)) : current.high;
+      const macroLow = pastMacro.length ? Math.min(...pastMacro.map((c) => c.low)) : current.low;
+      const baseDepthPct = macroHigh > 0 ? ((macroHigh - macroLow) / macroHigh) * 100 : 0;
+      const isBreakingResistance = current.close >= macroHigh * 0.98;
+
+      // Failure Risks (Early Warning System)
+      const isUpthrust = current.high - current.close > Math.abs(current.close - current.open) * 1.5 && volumeRatio > 1.5;
+      const distDays = past10.filter(c => c.close < c.open && c.volume > avgVol20 * 1.2).length;
+      const warningFlags: string[] = [];
+      if (baseDepthPct > 30) warningFlags.push("Wide Volatile Base");
+      if (isUpthrust) warningFlags.push("Shooting Star / Upthrust");
+      if (distDays >= 2) warningFlags.push(`Heavy Distribution (${distDays} days)`);
+
+      const isVolumeSurge = volumeRatio >= config.volumeSurgeMultiplier && current.close > current.open;
+      // VCP Dry-up is an excellent bonus, but shouldn't strictly block all breakouts if volume is surging out of a base.
+      const isInstitutionalBreakout = isStage2Uptrend && isVolumeSurge && (isBreakingResistance || isPocketPivot);
+
+      // 2. Volume & Price Breakout Condition
+      if (isInstitutionalBreakout) {
         // Check Micro Consolidation Pattern (preceding 3-7 days)
         const pastMicro = candles.slice(Math.max(0, i - config.microConsolidationDays), i);
         const microHigh = pastMicro.length ? Math.max(...pastMicro.map((c) => c.high)) : current.high;
@@ -849,20 +997,20 @@ export function runDseVolumeBreakoutBacktest(
 
         const isMicroConsolidated = microRangePct < 5.0; // Tight price range
 
-        // Check Macro Base Pattern (preceding 20-60 days)
-        const pastMacro = candles.slice(Math.max(0, i - config.macroBaseDays), i);
-        const macroHigh = pastMacro.length ? Math.max(...pastMacro.map((c) => c.high)) : current.high;
-        const isNearResistance = current.close >= macroHigh * 0.97;
-
-        let microPattern: BreakoutSignal['microPattern'] = 'VCP Compression';
-        if (microRangePct < 2.5) microPattern = 'Narrow Range (NR7)';
+        let microPattern: BreakoutSignal['microPattern'] = 'Resistance Retest';
+        if (microRangePct < 3.0) microPattern = 'Narrow Range (NR7)';
+        else if (microRangePct < 4.0 && isVcpDryUp && baseDepthPct < 25) microPattern = 'VCP Compression'; // Strict VCP
         else if (pastMicro.length && pastMicro[pastMicro.length - 1].volume < avgVol20 * 0.5) microPattern = 'Dry-up Spike';
-        else microPattern = 'Resistance Retest';
 
-        let macroPattern: BreakoutSignal['macroPattern'] = 'Cup & Handle';
-        if (i % 2 === 0) macroPattern = 'Ascending Triangle';
-        else if (i % 3 === 0) macroPattern = 'Multi-Week Box';
-        else macroPattern = '50/200 EMA Golden Cross';
+        const techPattern = detectTechnicalPattern(candles, i);
+        const harmonic = detectHarmonicPattern(candles, i);
+
+        // Derive macro pattern structurally rather than randomly
+        let macroPattern: BreakoutSignal['macroPattern'] = 'Multi-Week Box';
+        if (harmonic) macroPattern = 'Harmonic XABCD Pattern';
+        else if (techPattern.detectedPattern.includes('Triangle') || techPattern.detectedPattern.includes('Pennant') || techPattern.detectedPattern.includes('Wedge')) macroPattern = 'Ascending Triangle';
+        else if (techPattern.detectedPattern.includes('Cup') || techPattern.detectedPattern.includes('Bottom')) macroPattern = 'Cup & Handle';
+        else if (techPattern.detectedPattern.includes('Cross')) macroPattern = '50/200 EMA Golden Cross';
 
         // 3. Track Forward Moves & Profitability (+5d, +10d, +20d, +60d)
         const entryPrice = current.close;
@@ -879,6 +1027,10 @@ export function runDseVolumeBreakoutBacktest(
         const forward20dPct = Number((((c20.close - entryPrice) / entryPrice) * 100).toFixed(2));
         const forward60dPct = Number((((c60.close - entryPrice) / entryPrice) * 100).toFixed(2));
 
+        // Track Trade-specific targets
+        const tradeTargetPct = harmonic ? harmonic.potentialGainPct : config.targetProfitPct;
+        const tradeStopPct = harmonic ? harmonic.potentialRiskPct : config.stopLossPct;
+
         let maxPrice = entryPrice;
         let minPrice = entryPrice;
         let status: BreakoutSignal['status'] = 'In Progress';
@@ -892,13 +1044,18 @@ export function runDseVolumeBreakoutBacktest(
           const gainFromEntry = ((fc.high - entryPrice) / entryPrice) * 100;
           const lossFromEntry = ((fc.low - entryPrice) / entryPrice) * 100;
 
-          if (gainFromEntry >= config.targetProfitPct && status === 'In Progress') {
-            status = 'Target Hit';
-            realizedGainPct = config.targetProfitPct;
-            break;
-          } else if (lossFromEntry <= -config.stopLossPct && status === 'In Progress') {
+          const hitsTarget = gainFromEntry >= tradeTargetPct;
+          const hitsStopLoss = lossFromEntry <= -tradeStopPct;
+
+          if (hitsStopLoss && status === 'In Progress') {
+            // Defensive backtesting: If a single candle's range hits BOTH the stop loss and the target,
+            // we assume the stop loss triggered first to prevent falsely inflating win rate.
             status = 'Stop Loss Hit';
-            realizedGainPct = -config.stopLossPct;
+            realizedGainPct = -tradeStopPct;
+            break;
+          } else if (hitsTarget && status === 'In Progress') {
+            status = 'Target Hit';
+            realizedGainPct = tradeTargetPct;
             break;
           }
         }
@@ -916,9 +1073,6 @@ export function runDseVolumeBreakoutBacktest(
         const realizedRiskRewardRatio = Number((peakReturnPct / absDrawdown).toFixed(2));
 
         // Trade reasoning sentence
-    const techPattern = detectTechnicalPattern(candles, i);
-        const harmonic = detectHarmonicPattern(candles, i);
-
         signals.push({
           symbol: stock.symbol,
           stockName: stock.name,
@@ -945,6 +1099,7 @@ export function runDseVolumeBreakoutBacktest(
           riskRewardRatio: harmonic ? harmonic.riskRewardRatio : plannedRiskRewardRatio,
           realizedRiskRewardRatio,
           harmonicDetails: harmonic || undefined,
+          warningFlags
         });
 
         // Skip ahead a few candles so we don't duplicate signals on consecutive days
@@ -2237,6 +2392,543 @@ function edgeConfidenceFromSampleSize(n: number): 'Low' | 'Medium' | 'High' {
   return 'Low';
 }
 
+/**
+ * Computes official DSE daily circuit breaker bands and limits based on BSEC price tiers.
+ */
+export function calculateDseCircuitLimit(prevClose: number, currentClose: number): DseCircuitInfo {
+  let circuitLimitPct = 10.0;
+  if (prevClose <= 200) {
+    circuitLimitPct = 10.0;
+  } else if (prevClose <= 500) {
+    circuitLimitPct = 8.75;
+  } else if (prevClose <= 1000) {
+    circuitLimitPct = 7.5;
+  } else if (prevClose <= 2000) {
+    circuitLimitPct = 6.25;
+  } else if (prevClose <= 5000) {
+    circuitLimitPct = 5.0;
+  } else {
+    circuitLimitPct = 3.75;
+  }
+
+  const upperCircuitPrice = Number((prevClose * (1 + circuitLimitPct / 100)).toFixed(1));
+  const lowerCircuitPrice = Number((prevClose * (1 - circuitLimitPct / 100)).toFixed(1));
+  const changeFromPrevClosePct = prevClose > 0 ? Number((((currentClose - prevClose) / prevClose) * 100).toFixed(2)) : 0;
+
+  const isAtUpperCircuit = currentClose >= upperCircuitPrice - 0.05;
+  const isNearUpperCircuit = currentClose >= upperCircuitPrice * 0.985 && !isAtUpperCircuit;
+  const isAtLowerCircuit = currentClose <= lowerCircuitPrice + 0.05;
+  const isNearLowerCircuit = currentClose <= lowerCircuitPrice * 1.015 && !isAtLowerCircuit;
+
+  return {
+    circuitLimitPct,
+    upperCircuitPrice,
+    lowerCircuitPrice,
+    isNearUpperCircuit,
+    isAtUpperCircuit,
+    isNearLowerCircuit,
+    isAtLowerCircuit,
+    changeFromPrevClosePct,
+  };
+}
+
+const DSE_KNOWN_Z_CATEGORY = new Set([
+  'MEGHNAPET', 'MEGCONMILK', 'SAVAREFR', 'SHYAMPSUG', 'ZEALBANGLA', 'DULAMIACOT',
+  'JUTESPINN', 'BEACHHATCH', 'NORTHERN', 'RAHIMTEXT', 'KEYACOSMET', 'SAMATALETH',
+  'TALLUSPIN', 'BEXIMCO', 'FAMILYTEX', 'ALLTEX', 'ANWARGALV', 'APPLLTD'
+]);
+
+export function getDseStockCategory(stock: DseStockData): DseCategory {
+  const sym = stock.symbol.toUpperCase().trim();
+  if (DSE_KNOWN_Z_CATEGORY.has(sym)) return 'Z';
+  if (stock.peRatio < 0 && stock.yoyGrowthPct < -10 && stock.avgTurnoverBdtMillion < 2.0) return 'Z';
+  if (stock.candles && stock.candles.length < 100) return 'N'; // New listing
+  if (stock.yoyGrowthPct >= 5.0 && stock.peRatio > 0 && stock.peRatio < 35) return 'A';
+  return 'B';
+}
+
+export function getDseMarketProfile(stock: DseStockData, latestClose: number, prevClose: number): DseMarketProfile {
+  const category = getDseStockCategory(stock);
+  const settlementDays = category === 'Z' ? 'T+3' : 'T+2';
+  const isMarginable = category !== 'Z';
+
+  let floatProfile: 'Institutional Grade' | 'Mid Float' | 'Low Float Speculative' = 'Mid Float';
+  if (stock.avgTurnoverBdtMillion >= 25) {
+    floatProfile = 'Institutional Grade';
+  } else if (stock.avgTurnoverBdtMillion < 6) {
+    floatProfile = 'Low Float Speculative';
+  }
+
+  let riskScore = 0;
+  if (category === 'Z') riskScore += 40;
+  if (stock.avgTurnoverBdtMillion < 5) riskScore += 25;
+  if (latestClose < 25) riskScore += 15;
+  if (stock.peRatio < 0 || stock.peRatio > 40) riskScore += 20;
+  const manipulationRiskScore = Math.min(100, riskScore);
+
+  const circuitInfo = calculateDseCircuitLimit(prevClose || latestClose, latestClose);
+
+  return {
+    category,
+    settlementDays,
+    isMarginable,
+    floatProfile,
+    manipulationRiskScore,
+    circuitInfo,
+  };
+}
+
+export function analyzeDseVolumeFootprint(
+  stock: DseStockData,
+  candles: DseStockCandle[]
+): VolumeFootprintMetrics {
+  const count = candles.length;
+  const latest = count > 0 ? candles[count - 1] : { close: 100, open: 100, high: 100, low: 100, volume: 10000, date: '' };
+  const prevCandles = candles.slice(Math.max(0, count - 21), count - 1);
+  const avgVol20 = prevCandles.length > 0 ? (prevCandles.reduce((s, c) => s + c.volume, 0) / prevCandles.length) : (latest.volume || 10000);
+
+  // 1. Pocket Pivot Calculation (Gil Morales & Chris Kacher)
+  // Current day volume must be higher than the maximum down-volume of the last 10 days
+  const past10 = candles.slice(Math.max(0, count - 11), count - 1);
+  const downCandles10 = past10.filter((c, idx) => {
+    const prior = idx > 0 ? past10[idx - 1] : (count >= 12 ? candles[count - 12] : c);
+    return c.close < c.open || c.close < prior.close;
+  });
+  const maxDownVol10 = downCandles10.length > 0 ? Math.max(...downCandles10.map(c => c.volume)) : (avgVol20 * 0.75);
+  const isUpDay = latest.close >= latest.open;
+  const isPocketPivot = isUpDay && latest.volume > maxDownVol10 && maxDownVol10 > 0;
+  const pocketPivotRatio = maxDownVol10 > 0 ? Number((latest.volume / maxDownVol10).toFixed(2)) : 1.0;
+
+  // 2. Volume Dry-Up (VDU / Supply Exhaustion) in Base
+  const past3 = candles.slice(Math.max(0, count - 4), count - 1);
+  const minVolLast3 = past3.length > 0 ? Math.min(...past3.map(c => c.volume)) : avgVol20;
+  const vduRatio = Number((minVolLast3 / (avgVol20 || 1)).toFixed(2));
+  const isVdu = vduRatio <= 0.55;
+
+  // 3. OBV (On-Balance Volume) Calculation & 20d High Breakout
+  let obv = 0;
+  const obvHistory: number[] = [];
+  for (let i = 0; i < count; i++) {
+    if (i === 0) {
+      obv = candles[i].volume;
+    } else {
+      if (candles[i].close > candles[i - 1].close) {
+        obv += candles[i].volume;
+      } else if (candles[i].close < candles[i - 1].close) {
+        obv -= candles[i].volume;
+      }
+    }
+    obvHistory.push(obv);
+  }
+  const recentObv = obvHistory.slice(Math.max(0, count - 21), count - 1);
+  const maxObv20 = recentObv.length > 0 ? Math.max(...recentObv) : obv;
+  const obv20dHigh = obv >= maxObv20;
+
+  // OBV Divergence vs Price over 20 sessions
+  const past20PriceStart = count >= 20 ? candles[count - 20].close : latest.close;
+  const priceChange20Pct = ((latest.close - past20PriceStart) / (past20PriceStart || 1)) * 100;
+  const obvStart20 = obvHistory[Math.max(0, count - 20)] || 1;
+  const obvChange20Pct = ((obv - obvStart20) / (Math.abs(obvStart20) || 1)) * 100;
+
+  let obvSlope: 'Bullish Divergence' | 'Rising' | 'Flat' | 'Bearish' = 'Flat';
+  if (obv20dHigh && priceChange20Pct <= 3.5) {
+    obvSlope = 'Bullish Divergence';
+  } else if (obvChange20Pct > 10.0) {
+    obvSlope = 'Rising';
+  } else if (obvChange20Pct < -10.0) {
+    obvSlope = 'Bearish';
+  }
+
+  // 4. Chaikin Money Flow (CMF-20)
+  let mfvSum = 0;
+  let volSum = 0;
+  const cmfSlice = candles.slice(Math.max(0, count - 20));
+  for (const c of cmfSlice) {
+    const range = c.high - c.low;
+    const mfm = range > 0 ? ((c.close - c.low) - (c.high - c.close)) / range : 0;
+    mfvSum += mfm * c.volume;
+    volSum += c.volume;
+  }
+  const cmf20 = volSum > 0 ? Number((mfvSum / volSum).toFixed(3)) : 0;
+  let cmfStatus: 'Strong Inflow (+0.15+)' | 'Moderate Inflow' | 'Neutral' | 'Outflow' = 'Neutral';
+  if (cmf20 >= 0.15) cmfStatus = 'Strong Inflow (+0.15+)';
+  else if (cmf20 > 0.04) cmfStatus = 'Moderate Inflow';
+  else if (cmf20 < -0.05) cmfStatus = 'Outflow';
+
+  // 5. Volume Spread Analysis (VSA) / Wyckoff Bar Classification
+  let vsaSignal: 'Absorption Bar' | 'No Supply Test' | 'Stopping Volume' | 'Effort vs Result Win' | 'Normal' = 'Normal';
+  let vsaDescription = 'Standard market volume progression.';
+  const rvol = avgVol20 > 0 ? latest.volume / avgVol20 : 1.0;
+  const barRange = latest.high - latest.low;
+  const closePositionInRange = barRange > 0 ? (latest.close - latest.low) / barRange : 0.5;
+
+  if (rvol >= 1.5 && closePositionInRange >= 0.65) {
+    vsaSignal = 'Absorption Bar';
+    vsaDescription = `Institutional Absorption: Heavy volume (${rvol.toFixed(1)}x) with high close (top ${Math.round(closePositionInRange * 100)}% of bar). Smart money actively absorbing selling float.`;
+  } else if (rvol <= 0.65 && isVdu && closePositionInRange >= 0.45) {
+    vsaSignal = 'No Supply Test';
+    vsaDescription = `No Supply Test: Price holding firm with minimal volume (${rvol.toFixed(1)}x). Confirms selling exhaustion before markup.`;
+  } else if (rvol >= 2.0 && count >= 2 && latest.low < (candles[count - 2]?.low || latest.low) && latest.close > latest.open) {
+    vsaSignal = 'Stopping Volume';
+    vsaDescription = `Stopping Volume: High volume halted prior selloff and closed green with supportive lower wick.`;
+  } else if (rvol >= 1.8 && (latest.close - latest.open) / (latest.open || 1) > 0.025) {
+    vsaSignal = 'Effort vs Result Win';
+    vsaDescription = `Effort rewarded: Strong institutional volume matched by direct price markup (+${(((latest.close - latest.open) / latest.open) * 100).toFixed(1)}%).`;
+  }
+
+  // 6. Anchored VWAP (AVWAP from recent 30d swing low anchor)
+  const lookback30 = candles.slice(Math.max(0, count - 35));
+  let minLowIdx = 0;
+  let minLowVal = Infinity;
+  for (let i = 0; i < lookback30.length; i++) {
+    if (lookback30[i].low < minLowVal) {
+      minLowVal = lookback30[i].low;
+      minLowIdx = i;
+    }
+  }
+  const avwapCandles = lookback30.slice(minLowIdx);
+  let cumTypVol = 0;
+  let cumVol = 0;
+  for (const c of avwapCandles) {
+    const typ = (c.high + c.low + c.close) / 3;
+    cumTypVol += typ * c.volume;
+    cumVol += c.volume;
+  }
+  const anchoredVwap = cumVol > 0 ? Number((cumTypVol / cumVol).toFixed(2)) : latest.close;
+  const priceVsAvwapPct = anchoredVwap > 0 ? Number((((latest.close - anchoredVwap) / anchoredVwap) * 100).toFixed(2)) : 0;
+  const isAboveAvwap = latest.close >= anchoredVwap;
+
+  // 7. Turnover Surge
+  const latestTurnoverBdtMillion = Number(((latest.close * latest.volume) / 1000000).toFixed(2));
+  const avgTurnover20Million = Number(((avgVol20 * latest.close) / 1000000).toFixed(2));
+  const turnoverSurgeMultiplier = avgTurnover20Million > 0 ? Number((latestTurnoverBdtMillion / avgTurnover20Million).toFixed(2)) : 1.0;
+
+  // 8. Detected Patterns List & Primary Classification
+  const patternsDetected: string[] = [];
+  if (isPocketPivot) patternsDetected.push(`Pocket Pivot (${pocketPivotRatio}x vs 10d down-vol)`);
+  if (isVdu) patternsDetected.push(`Volume Dry-Up (VDU: ${vduRatio}x of ADV)`);
+  if (obv20dHigh) patternsDetected.push('OBV 20-Day New High');
+  if (obvSlope === 'Bullish Divergence') patternsDetected.push('OBV Leading Bullish Divergence');
+  if (cmf20 >= 0.15) patternsDetected.push(`CMF Institutional Accumulation (+${cmf20})`);
+  if (vsaSignal !== 'Normal') patternsDetected.push(`VSA: ${vsaSignal}`);
+  if (isAboveAvwap && priceVsAvwapPct <= 4.0) patternsDetected.push(`Anchored VWAP Support (+${priceVsAvwapPct}% from ৳${anchoredVwap})`);
+
+  let primaryPattern: VolumePatternFootprintType = 'Standard Volume Expansion';
+  if (isPocketPivot) primaryPattern = 'Pocket Pivot (Kacher/Morales)';
+  else if (obvSlope === 'Bullish Divergence' || obv20dHigh) primaryPattern = 'OBV Leading Breakout';
+  else if (isVdu) primaryPattern = 'Volume Dry-Up (VDU)';
+  else if (vsaSignal === 'Absorption Bar') primaryPattern = 'VSA Absorption Bar (Stopping Vol)';
+  else if (vsaSignal === 'No Supply Test') primaryPattern = 'VSA No Supply Test';
+  else if (cmf20 >= 0.12) primaryPattern = 'CMF Smart Money Inflow';
+  else if (isAboveAvwap) primaryPattern = 'Anchored VWAP Reclaim';
+
+  // 9. Composite Volume Footprint Score (0 - 100)
+  let compositeScore = 0;
+  if (isPocketPivot) compositeScore += Math.min(30, Math.round(20 + pocketPivotRatio * 5));
+  if (isVdu) compositeScore += 20;
+  if (obv20dHigh) compositeScore += 18;
+  if (obvSlope === 'Bullish Divergence') compositeScore += 15;
+  if (cmf20 >= 0.15) compositeScore += 18;
+  else if (cmf20 > 0.05) compositeScore += 10;
+  if (vsaSignal === 'Absorption Bar' || vsaSignal === 'Stopping Volume') compositeScore += 15;
+  else if (vsaSignal === 'No Supply Test') compositeScore += 12;
+  if (isAboveAvwap && priceVsAvwapPct <= 5.0) compositeScore += 10;
+  if (rvol >= 2.0 && isUpDay) compositeScore += 10;
+
+  compositeScore = Math.min(100, Math.max(15, compositeScore));
+
+  let footprintLabel: VolumeFootprintMetrics['footprintLabel'] = 'Neutral Flow';
+  if (compositeScore >= 80) footprintLabel = 'Institutional Accumulation';
+  else if (compositeScore >= 65) footprintLabel = 'Stealth Smart Money';
+  else if (isVdu) footprintLabel = 'Volume Dry-Up Setup';
+  else if (vsaSignal === 'Absorption Bar' || vsaSignal === 'No Supply Test') footprintLabel = 'Absorption Test';
+
+  return {
+    compositeScore,
+    footprintLabel,
+    primaryPattern,
+    patternsDetected,
+    isPocketPivot,
+    pocketPivotRatio,
+    isVdu,
+    vduRatio,
+    obv20dHigh,
+    obvSlope,
+    obvTrendValue: Number(obvChange20Pct.toFixed(1)),
+    cmf20,
+    cmfStatus,
+    vsaSignal,
+    vsaDescription,
+    anchoredVwap,
+    priceVsAvwapPct,
+    isAboveAvwap,
+    turnoverSurgeBdtMillion: latestTurnoverBdtMillion,
+    turnoverSurgeMultiplier
+  };
+}
+
+export function generateRealisticTradePlan(
+  stock: DseStockData,
+  candles: DseStockCandle[],
+  config: BacktestConfig,
+  harmonic: HarmonicPatternDetails | null | undefined,
+  techPattern: TechnicalPatternType,
+  dseProfile: DseMarketProfile,
+  earlyTrend: EarlyTrendAnalysis
+): RealisticTradePlan {
+  const count = candles.length;
+  const latest = count > 0 ? candles[count - 1] : { close: 100, high: 100, low: 100, open: 100, volume: 10000, date: '' };
+  const close = latest.close;
+
+  // 1. Volatility Calculation (ATR-14)
+  const atrValues = computeAtr(candles, 14);
+  const rawAtr = atrValues.length > 0 && atrValues[atrValues.length - 1] !== null
+    ? (atrValues[atrValues.length - 1] as number)
+    : close * 0.035;
+  const atr14 = Number(rawAtr.toFixed(2));
+  const atrPct = Number(((atr14 / close) * 100).toFixed(2));
+
+  // 2. Structural Swing Lows & Highs
+  const past5 = candles.slice(Math.max(0, count - 6), Math.max(0, count - 1));
+  const swingLow5d = past5.length > 0 ? Math.min(...past5.map(c => c.low)) : close * 0.95;
+  const past20 = candles.slice(Math.max(0, count - 21), Math.max(0, count - 1));
+  const macroHigh20 = past20.length > 0 ? Math.max(...past20.map(c => c.high)) : close * 1.05;
+  const avgVol20 = past20.length > 0 ? (past20.reduce((acc, c) => acc + c.volume, 0) / past20.length) : latest.volume;
+
+  // 3. Realistic Entry Zone and Trigger Definition
+  let idealEntryPrice = close;
+  let entryRangeMin = close;
+  let entryRangeMax = close;
+  let maxChasePrice = close;
+  let entryTrigger = '';
+  let entryStyle: RealisticTradePlan['entryStyle'] = 'Breakout Pullback';
+
+  if (harmonic && config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
+    idealEntryPrice = Number(harmonic.entryPrice.toFixed(2));
+    entryRangeMin = Number((idealEntryPrice * 0.99).toFixed(2));
+    entryRangeMax = Number((idealEntryPrice * 1.015).toFixed(2));
+    maxChasePrice = Number((idealEntryPrice * 1.03).toFixed(2));
+    entryTrigger = harmonic.patternType === 'BEARISH_C_TO_D'
+      ? `Buy at Harmonic Point C (৳${harmonic.entryPrice.toFixed(2)}) support reversal zone`
+      : `Buy at Harmonic Point D (৳${harmonic.entryPrice.toFixed(2)}) reversal bounce zone`;
+    entryStyle = 'Harmonic Pivot';
+  } else if (earlyTrend.isEarlyTrend) {
+    idealEntryPrice = close;
+    entryRangeMin = Number((close * 0.985).toFixed(2));
+    entryRangeMax = Number((close * 1.015).toFixed(2));
+    maxChasePrice = Number((close * 1.035).toFixed(2));
+    entryTrigger = `Accumulate near 5d/20d MA cross before crowd volume expansion (${earlyTrend.stageLabel})`;
+    entryStyle = 'Pocket Pivot Accumulation';
+  } else if (close >= macroHigh20 * 0.985) {
+    // Breakout above 20d High pivot
+    idealEntryPrice = Number(macroHigh20.toFixed(2));
+    entryRangeMin = Number((macroHigh20 * 0.995).toFixed(2));
+    entryRangeMax = Number((macroHigh20 * 1.025).toFixed(2)); // Standard CANSLIM/Minervini buy zone (max +2.5%)
+    maxChasePrice = Number((macroHigh20 * 1.04).toFixed(2));
+    entryTrigger = `Confirmed breakout above 20d pivot ৳${macroHigh20.toFixed(2)} with volume > ${(Math.round(avgVol20 * (config.volumeSurgeMultiplier || 1.8))).toLocaleString()} shares`;
+    entryStyle = 'Momentum Breakout';
+  } else {
+    // Base pullback / consolidation support
+    idealEntryPrice = close;
+    entryRangeMin = Number((close * 0.985).toFixed(2));
+    entryRangeMax = Number((close * 1.02).toFixed(2));
+    maxChasePrice = Number((close * 1.035).toFixed(2));
+    entryTrigger = `Pullback entry near 20d MA support (৳${(close * 0.99).toFixed(2)}) with low volume dry-up`;
+    entryStyle = 'Breakout Pullback';
+  }
+
+  // Check if current market price is within optimal buy range or overextended
+  const isWithinBuyZone = close >= entryRangeMin && close <= entryRangeMax;
+  const isOverextended = close > maxChasePrice;
+  const chasePctFromPivot = Number((((close - idealEntryPrice) / idealEntryPrice) * 100).toFixed(2));
+
+  // 4. Realistic Structure & Volatility-Based Stop Loss
+  let stopLossPrice = 0;
+  let stopLossType: RealisticTradePlan['stopLossType'] = 'Structural Swing Low';
+
+  if (harmonic && config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
+    stopLossPrice = Number(harmonic.stopLossPrice.toFixed(2));
+    stopLossType = 'Structural Swing Low';
+  } else {
+    // Evaluate Structural Swing Low (1% below 5d swing low) vs ATR 1.5x stop
+    const structuralStop = Number((swingLow5d * 0.99).toFixed(2));
+    const atrStop = Number((idealEntryPrice - 1.5 * atr14).toFixed(2));
+    const structuralLossPct = ((idealEntryPrice - structuralStop) / idealEntryPrice) * 100;
+
+    if (structuralLossPct >= 2.5 && structuralLossPct <= 7.5) {
+      stopLossPrice = structuralStop;
+      stopLossType = 'Structural Swing Low';
+    } else if (structuralLossPct > 7.5) {
+      stopLossPrice = Math.max(atrStop, Number((idealEntryPrice * 0.935).toFixed(2)));
+      stopLossType = 'Volatility ATR (1.5x)';
+    } else {
+      stopLossPrice = Number((idealEntryPrice - 1.25 * atr14).toFixed(2));
+      stopLossType = 'Volatility ATR (1.5x)';
+    }
+  }
+
+  // Ensure stop is not below DSE lower circuit limit
+  if (dseProfile?.circuitInfo?.lowerCircuitPrice && stopLossPrice < dseProfile.circuitInfo.lowerCircuitPrice) {
+    stopLossPrice = Number((dseProfile.circuitInfo.lowerCircuitPrice * 1.005).toFixed(2));
+  }
+
+  const stopLossPct = Number((((idealEntryPrice - stopLossPrice) / idealEntryPrice) * 100).toFixed(2));
+  const riskAmountBdt = Number((idealEntryPrice - stopLossPrice).toFixed(2));
+  const invalidationCriteria = `Daily candle closes below ৳${stopLossPrice.toFixed(2)} (${stopLossType} violation)`;
+
+  // 5. Tiered Scale-Out Profit Targets (T1, T2, T3)
+  const targets: RealisticTradeTarget[] = [];
+  
+  if (harmonic && config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
+    const t1Price = Number((idealEntryPrice + (harmonic.dTargetPrice - idealEntryPrice) * 0.5).toFixed(2));
+    const t1Gain = Number((((t1Price - idealEntryPrice) / idealEntryPrice) * 100).toFixed(2));
+    targets.push({
+      tier: 1,
+      label: 'Target 1 (Harmonic Midway 0.50 Retracement)',
+      price: t1Price,
+      gainPct: t1Gain,
+      gainBdt: Number((t1Price - idealEntryPrice).toFixed(2)),
+      allocationPct: 50,
+      rewardRiskRatio: Number((t1Gain / (stopLossPct || 1)).toFixed(2)),
+      rationale: `Take 50% profits, move Stop Loss to Breakeven (৳${idealEntryPrice.toFixed(2)})`
+    });
+
+    const t2Price = Number(harmonic.dTargetPrice.toFixed(2));
+    const t2Gain = Number(harmonic.potentialGainPct.toFixed(2));
+    targets.push({
+      tier: 2,
+      label: 'Target 2 (Point D Completion Target)',
+      price: t2Price,
+      gainPct: t2Gain,
+      gainBdt: Number((t2Price - idealEntryPrice).toFixed(2)),
+      allocationPct: 30,
+      rewardRiskRatio: Number((t2Gain / (stopLossPct || 1)).toFixed(2)),
+      rationale: 'Lock in 30% position at harmonic PRZ completion zone'
+    });
+
+    const t3Price = Number((harmonic.dTargetPrice * 1.08).toFixed(2));
+    const t3Gain = Number((((t3Price - idealEntryPrice) / idealEntryPrice) * 100).toFixed(2));
+    targets.push({
+      tier: 3,
+      label: 'Target 3 (Harmonic Extension Runner)',
+      price: t3Price,
+      gainPct: t3Gain,
+      gainBdt: Number((t3Price - idealEntryPrice).toFixed(2)),
+      allocationPct: 20,
+      rewardRiskRatio: Number((t3Gain / (stopLossPct || 1)).toFixed(2)),
+      rationale: 'Trail remaining 20% on 10 EMA for maximum trend ride'
+    });
+  } else {
+    // Standard Price Action & Technical Targets
+    // T1: 1st Resistance or ~1.3x Risk distance (+5.5% to +8.5%)
+    const t1Gain = Number(Math.max(5.5, stopLossPct * 1.3).toFixed(2));
+    const t1Price = Number((idealEntryPrice * (1 + t1Gain / 100)).toFixed(2));
+    targets.push({
+      tier: 1,
+      label: 'Target 1 (1st Resistance / Initial Scale-out)',
+      price: t1Price,
+      gainPct: t1Gain,
+      gainBdt: Number((t1Price - idealEntryPrice).toFixed(2)),
+      allocationPct: 50,
+      rewardRiskRatio: Number((t1Gain / (stopLossPct || 1)).toFixed(2)),
+      rationale: `Scale out 50% shares. Immediately move stop loss to Breakeven (৳${idealEntryPrice.toFixed(2)}).`
+    });
+
+    // T2: Base Depth / Pattern Measured Move (+12% to +18%)
+    const baseDepthGain = ((macroHigh20 - swingLow5d) / idealEntryPrice) * 100;
+    const t2Gain = Number(Math.max(t1Gain + 4.0, Math.min(22.0, baseDepthGain * 1.4)).toFixed(2));
+    const t2Price = Number((idealEntryPrice * (1 + t2Gain / 100)).toFixed(2));
+    targets.push({
+      tier: 2,
+      label: 'Target 2 (Pattern Target / Base Measured Move)',
+      price: t2Price,
+      gainPct: t2Gain,
+      gainBdt: Number((t2Price - idealEntryPrice).toFixed(2)),
+      allocationPct: 30,
+      rewardRiskRatio: Number((t2Gain / (stopLossPct || 1)).toFixed(2)),
+      rationale: 'Lock in 30% position at major structural resistance zone.'
+    });
+
+    // T3: 1.618 Fib Extension / Trend Expansion (+20% to +35%)
+    const t3Gain = Number(Math.max(t2Gain + 6.0, t2Gain * 1.5).toFixed(2));
+    const t3Price = Number((idealEntryPrice * (1 + t3Gain / 100)).toFixed(2));
+    targets.push({
+      tier: 3,
+      label: 'Target 3 (Trend Expansion / Runner)',
+      price: t3Price,
+      gainPct: t3Gain,
+      gainBdt: Number((t3Price - idealEntryPrice).toFixed(2)),
+      allocationPct: 20,
+      rewardRiskRatio: Number((t3Gain / (stopLossPct || 1)).toFixed(2)),
+      rationale: 'Trail remaining 20% position below 10 EMA / 20 EMA until breakdown.'
+    });
+  }
+
+  // 6. Weighted Expected Gain & Net Friction Calculation
+  const weightedAvgTargetGainPct = Number(
+    ((targets[0].gainPct * 0.50) + (targets[1].gainPct * 0.30) + (targets[2].gainPct * 0.20)).toFixed(2)
+  );
+  const weightedTargetPrice = Number(
+    ((targets[0].price * 0.50) + (targets[1].price * 0.30) + (targets[2].price * 0.20)).toFixed(2)
+  );
+
+  // DSE Friction: 0.40% broker fee + 0.10% AIT tax = 0.50% roundtrip
+  const estimatedFrictionPct = 0.50;
+  const netTargetGainPct = Number(Math.max(0, weightedAvgTargetGainPct - estimatedFrictionPct).toFixed(2));
+  const netRiskRewardRatio = Number((netTargetGainPct / (stopLossPct + estimatedFrictionPct)).toFixed(2));
+
+  // 7. Dynamic Risk-Based Position Sizing (Example 100k BDT account)
+  const suggestedAccountRiskPct = 1.5; // Risk 1.5% of account per trade
+  const totalAccountBdt = 100000;
+  const maxRiskBdt = totalAccountBdt * (suggestedAccountRiskPct / 100);
+  const perShareRiskBdt = Math.max(0.1, idealEntryPrice - stopLossPrice);
+  const recommendedSharesFor100k = Math.max(10, Math.floor(maxRiskBdt / perShareRiskBdt));
+  const recommendedCapitalFor100k = Number((recommendedSharesFor100k * idealEntryPrice).toFixed(2));
+
+  // Liquidity Protection: Max position shares <= 5% of 20d ADV
+  const maxDailyTurnoverCapShares = Math.round(avgVol20 * 0.05);
+  const isLiquidityConstrained = (recommendedSharesFor100k * idealEntryPrice) > (stock.avgTurnoverBdtMillion * 1000000 * 0.05);
+
+  // 8. Settlement and Trailing Stop Rules
+  const holdingPeriodDays = '5 - 15 Trading Days (Swing)';
+  const trailingStopRule = `Once Target 1 (৳${targets[0].price.toFixed(2)}) is reached, immediately move stop loss to Breakeven (৳${idealEntryPrice.toFixed(2)}). Trail remaining 50% shares along 10 EMA.`;
+  const settlementSafetyNote = `DSE ${dseProfile.settlementDays} settlement rule: shares are locked on Day 1. Ensure position size is properly bounded to handle overnight gap risk.`;
+
+  return {
+    idealEntryPrice,
+    entryRangeMin,
+    entryRangeMax,
+    maxChasePrice,
+    isWithinBuyZone,
+    isOverextended,
+    chasePctFromPivot,
+    entryTrigger,
+    entryStyle,
+    stopLossPrice,
+    stopLossPct,
+    riskAmountBdt,
+    stopLossType,
+    invalidationCriteria,
+    atr14,
+    atrPct,
+    swingLow5d: Number(swingLow5d.toFixed(2)),
+    targets,
+    weightedAvgTargetGainPct,
+    weightedTargetPrice,
+    estimatedFrictionPct,
+    netTargetGainPct,
+    netRiskRewardRatio,
+    suggestedAccountRiskPct,
+    recommendedSharesFor100k,
+    recommendedCapitalFor100k,
+    maxDailyTurnoverCapShares,
+    isLiquidityConstrained,
+    holdingPeriodDays,
+    trailingStopRule,
+    settlementSafetyNote
+  };
+}
+
 export function runDseStockScreener(
   stocks: DseStockData[],
   config: BacktestConfig,
@@ -2257,6 +2949,7 @@ export function runDseStockScreener(
     const candles = stock.candles;
     const latest = candles[candles.length - 1];
     const prevCandles = candles.slice(-21, -1);
+    const prevClose = prevCandles.length > 0 ? prevCandles[prevCandles.length - 1].close : latest.close;
 
     const sumVol20 = prevCandles.reduce((acc, c) => acc + c.volume, 0);
     const avgVol20 = prevCandles.length > 0 ? sumVol20 / prevCandles.length : 100000;
@@ -2265,13 +2958,50 @@ export function runDseStockScreener(
     const ma20Price = prevCandles.length > 0 ? sumClose20 / prevCandles.length : latest.close;
 
     const rvol20 = avgVol20 > 0 ? Number((latest.volume / avgVol20).toFixed(2)) : 1.0;
+    const dseProfile = getDseMarketProfile(stock, latest.close, prevClose);
+
+    // Price Structure Analysis (Macro Resistance)
+    const pastMacro = candles.slice(Math.max(0, candles.length - config.macroBaseDays), -1);
+    const macroHigh = pastMacro.length ? Math.max(...pastMacro.map((c) => c.high)) : latest.high;
+    const isBreakingResistance = latest.close >= macroHigh * 0.98;
+
+    // Institutional Filters (Stage 2 Uptrend)
+    const past50 = candles.slice(Math.max(0, candles.length - 50));
+    const past200 = candles.slice(Math.max(0, candles.length - 200));
+    const sma50 = past50.length > 0 ? past50.reduce((acc, c) => acc + c.close, 0) / past50.length : latest.close;
+    const sma200 = past200.length >= 100 ? past200.reduce((acc, c) => acc + c.close, 0) / past200.length : null;
+    const isStage2Uptrend = sma200 !== null ? ((sma50 > sma200) && (latest.close > sma50)) : (latest.close > sma50);
+
+    // Pocket Pivot (Early Entry)
+    const past10 = candles.slice(Math.max(0, candles.length - 11), -1);
+    const maxDownVolume10 = past10.filter(c => c.close < c.open).reduce((max, c) => Math.max(max, c.volume), 0);
+    const isPocketPivot = latest.close > latest.open && latest.volume > maxDownVolume10 && maxDownVolume10 > 0;
+
+    // VCP Dry-up Check
+    const past3 = candles.slice(Math.max(0, candles.length - 4), -1);
+    const maxVol3 = past3.length ? Math.max(...past3.map(c => c.volume)) : latest.volume;
+    const isVcpDryUp = maxVol3 < avgVol20 * 0.75;
+
+    // Failure Risks
+    const macroLow = pastMacro.length ? Math.min(...pastMacro.map((c) => c.low)) : latest.low;
+    const baseDepthPct = macroHigh > 0 ? ((macroHigh - macroLow) / macroHigh) * 100 : 0;
+    const isUpthrust = latest.high - latest.close > Math.abs(latest.close - latest.open) * 1.5 && rvol20 > 1.5;
+    const distDays = past10.filter(c => c.close < c.open && c.volume > avgVol20 * 1.2).length;
+    const warningFlags: string[] = [];
+    if (baseDepthPct > 30) warningFlags.push("Wide Volatile Base");
+    if (isUpthrust) warningFlags.push("Shooting Star / Upthrust");
+    if (distDays >= 2) warningFlags.push(`Heavy Distribution (${distDays} days)`);
 
     // Technical Metrics & Volatility Contraction
     const isPriceGreen = latest.close > latest.open;
-    const isVolumeSurge = rvol20 >= config.volumeSurgeMultiplier && isPriceGreen;
+    const isVolumeSurge = rvol20 >= config.volumeSurgeMultiplier && isPriceGreen && (isBreakingResistance || isPocketPivot);
+    const isInstitutionalBreakout = isStage2Uptrend && isVolumeSurge && warningFlags.length === 0;
 
     // Early Trend Ignition Analysis
     const earlyTrend = detectEarlyTrendIgnition(candles);
+
+    // Institutional Volume Footprint & VSA Analysis
+    const volumeFootprint = analyzeDseVolumeFootprint(stock, candles);
 
     const techPattern = detectTechnicalPattern(candles, candles.length - 1);
     const harmonic = detectHarmonicPattern(candles, candles.length - 1);
@@ -2287,7 +3017,7 @@ export function runDseStockScreener(
     const isTightConsolidation = range5Pct <= 4.0; // tight 4% range in 5 days
 
     // Volume dry-up check
-    const isVolumeDryUp = rvol20 <= 0.6;
+    const isVolumeDryUp = rvol20 <= 0.6 || volumeFootprint.isVdu;
 
     // Fundamentals Check
     const passesYoy = stock.yoyGrowthPct >= config.minYoyGrowthPct;
@@ -2298,21 +3028,30 @@ export function runDseStockScreener(
 
     // 1. Volume Surge & Price Action (35 pts max)
     if (isVolumeSurge) score += 35;
+    else if (volumeFootprint.isPocketPivot && isPriceGreen) score += 32;
     else if (rvol20 >= 1.5 && isPriceGreen) score += 25;
     else if (earlyTrend.isEarlyTrend) score += 28; // Early trend ignition bonus
     else if (isVolumeDryUp && isTightConsolidation) score += 28; // Pre-breakout coil
     else if (latest.close > ma20Price) score += 15;
 
-    // 2. Volatility Contraction & Pattern Quality (20 pts max)
+    // 2. Volume Footprint & Smart Money Accumulation Bonus (25 pts max)
+    if (volumeFootprint.compositeScore >= 80) score += 25;
+    else if (volumeFootprint.compositeScore >= 65) score += 18;
+    else if (volumeFootprint.compositeScore >= 50) score += 12;
+
+    // 3. Volatility Contraction & Pattern Quality (20 pts max)
     if (isTightConsolidation) score += 20;
     else if (range5Pct <= 7.0) score += 12;
+    if (techPattern.detectedPattern !== 'Box Range Consolidation' || harmonic) {
+      score += 15; // High conviction technical pattern detected
+    }
 
-    // 3. YoY Fundamental Growth & Revenue Momentum (20 pts max)
+    // 4. YoY Fundamental Growth & Revenue Momentum (20 pts max)
     if (stock.yoyGrowthPct >= 10.0) score += 20;
     else if (stock.yoyGrowthPct >= 6.0) score += 15;
     else if (stock.yoyGrowthPct >= config.minYoyGrowthPct) score += 10;
 
-    // 4. Historical Backtest Win Rate on this Stock (15 pts max)
+    // 5. Historical Backtest Win Rate on this Stock (15 pts max)
     const hasReliableOwnHistory = totalSignals >= MIN_RELIABLE_SAMPLE;
     if (hasReliableOwnHistory) {
       if (winRate >= 75) score += 15;
@@ -2320,11 +3059,11 @@ export function runDseStockScreener(
       else if (winRate >= 50) score += 5;
     }
 
-    // 5. Liquidity & Valuation P/E Safety (10 pts max)
+    // 6. Liquidity & Valuation P/E Safety (10 pts max)
     if (stock.peRatio < 15 && stock.peRatio > 0) score += 5;
     if (passesTurnover) score += 5;
 
-    // 6. Sector Money Flow
+    // 7. Sector Money Flow
     const sectorMoneyFlowPct = sectorMoneyFlow?.[stock.sector]?.momentumPct;
     if (sectorMoneyFlowPct !== undefined) {
       if (sectorMoneyFlowPct >= 20) score += 10;
@@ -2337,14 +3076,15 @@ export function runDseStockScreener(
 
     // Decision Status Determination
     let decisionStatus: ScreenerStockCandidate['decisionStatus'] = 'NEUTRAL';
+    const isStrongPatternSetup = (techPattern.patternConfidence >= 88 || !!harmonic) && isPriceGreen && rvol20 >= 1.5;
 
-    if (profitPotentialScore >= 70 && (isVolumeSurge || (rvol20 >= 2.0 && isPriceGreen)) && passesYoy && passesTurnover) {
+    if ((isInstitutionalBreakout && profitPotentialScore >= 45) || (isStrongPatternSetup && profitPotentialScore >= 50) || (volumeFootprint.compositeScore >= 80 && isPriceGreen && rvol20 >= 1.5) || (earlyTrend.stage === 'STAGE_2_IGNITION' && rvol20 >= 1.8 && isPriceGreen)) {
       decisionStatus = 'STRONG_BUY';
-    } else if ((earlyTrend.stage === 'STAGE_2_IGNITION' || earlyTrend.stage === 'STAGE_1_EARLY_COIL') && passesYoy) {
+    } else if ((volumeFootprint.isPocketPivot && isStage2Uptrend && passesYoy) || earlyTrend.isEarlyTrend || (volumeFootprint.obvSlope === 'Bullish Divergence' && isStage2Uptrend)) {
       decisionStatus = 'EARLY_TREND_IGNITION';
-    } else if (profitPotentialScore >= 55 || (isVolumeDryUp && isTightConsolidation && passesYoy)) {
+    } else if (profitPotentialScore >= 50 || (isVolumeDryUp && isTightConsolidation && passesYoy) || rvol20 >= 1.4 || volumeFootprint.compositeScore >= 65) {
       decisionStatus = 'WATCHLIST_BREAKOUT';
-    } else if (profitPotentialScore >= 40 || latest.close > ma20Price) {
+    } else if (profitPotentialScore >= 35 || latest.close > ma20Price) {
       decisionStatus = 'CONSOLIDATING_ACCUMULATION';
     }
 
@@ -2359,14 +3099,29 @@ export function runDseStockScreener(
 
     // Catalysts list
     const catalysts: string[] = [];
+    if (volumeFootprint.isPocketPivot) catalysts.push(`🚀 Pocket Pivot (${volumeFootprint.pocketPivotRatio}x vs 10d down-vol)`);
+    if (volumeFootprint.obvSlope === 'Bullish Divergence') catalysts.push(`📊 OBV Leading Bullish Divergence`);
+    else if (volumeFootprint.obv20dHigh) catalysts.push(`📈 OBV 20d High Breakout`);
+    if (volumeFootprint.cmf20 >= 0.15) catalysts.push(`🌊 CMF Smart Money Inflow (+${volumeFootprint.cmf20})`);
+    if (volumeFootprint.vsaSignal === 'Absorption Bar') catalysts.push(`🛡️ VSA Institutional Absorption Bar`);
+    else if (volumeFootprint.vsaSignal === 'No Supply Test') catalysts.push(`🔍 VSA No Supply Test (Sellers Dried Up)`);
+    if (volumeFootprint.isAboveAvwap && volumeFootprint.priceVsAvwapPct <= 4.0) catalysts.push(`⚓ Reclaiming Anchored VWAP (৳${volumeFootprint.anchoredVwap})`);
+
     if (earlyTrend.isEarlyTrend) catalysts.push(`🌱 ${earlyTrend.stageLabel}`);
     if (isVolumeSurge) catalysts.push(`🔥 Massive ${rvol20}x ADV Volume Surge`);
     if (isTightConsolidation) catalysts.push(`⚡ Tight Volatility Contraction (${range5Pct.toFixed(1)}% Range)`);
     if (isVolumeDryUp) catalysts.push(`💧 Institutional Supply Dry-up (0.${Math.round(rvol20 * 10)}x Vol)`);
+    if (dseProfile.circuitInfo.isAtUpperCircuit) catalysts.push(`🚀 Locked at DSE Upper Circuit (৳${dseProfile.circuitInfo.upperCircuitPrice} +${dseProfile.circuitInfo.circuitLimitPct}%)`);
+    else if (dseProfile.circuitInfo.isNearUpperCircuit) catalysts.push(`⚡ Approaching DSE Upper Circuit (৳${dseProfile.circuitInfo.upperCircuitPrice})`);
+    if (dseProfile.category === 'A') catalysts.push(`🏛️ DSE Category 'A' (T+2 Marginable)`);
     if (stock.yoyGrowthPct >= 8.0) catalysts.push(`📈 Strong YoY Revenue Growth (+${stock.yoyGrowthPct}%)`);
     if (stock.peRatio < 14) catalysts.push(`🛡️ Attractive P/E Valuation (${stock.peRatio}x)`);
     if (hasReliableOwnHistory && winRate >= 65) catalysts.push(`🏆 ${winRate.toFixed(0)}% Historical Signal Win Rate (${totalSignals} trades)`);
     if (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct >= 10) catalysts.push(`🌊 ${stock.sector} sector money flow +${sectorMoneyFlowPct.toFixed(0)}%`);
+
+    if (dseProfile.category === 'Z') warningFlags.push(`⚠️ DSE Category 'Z' Defaulter (T+3 Settlement, Non-Marginable)`);
+    if (dseProfile.circuitInfo.isAtLowerCircuit) warningFlags.push(`⛔ Locked at Lower Circuit Floor (৳${dseProfile.circuitInfo.lowerCircuitPrice})`);
+    if (dseProfile.manipulationRiskScore >= 60) warningFlags.push(`🚨 High Speculation / Low Float Volatility Risk (${dseProfile.manipulationRiskScore}/100)`);
 
     // Pattern description
     let pattern = 'Consolidation Base';
@@ -2420,6 +3175,34 @@ export function runDseStockScreener(
       }
     } else if (config.strategyType === 'HARMONIC_C_ENTRY_D_EXIT') {
       profitPotentialScore = Math.max(15, profitPotentialScore - 30);
+    }
+
+    // Generate Realistic Trade Plan (Buy Zone, Volatility/Structural Stop, Tiered Targets T1/T2/T3, Net R:R, and Sizing)
+    const tradePlan = generateRealisticTradePlan(
+      stock,
+      candles,
+      config,
+      harmonic,
+      finalDetectedPattern,
+      dseProfile,
+      earlyTrend
+    );
+
+    entryPrice = tradePlan.idealEntryPrice;
+    targetPrice = tradePlan.targets[0]?.price || targetPrice;
+    stopLossPrice = tradePlan.stopLossPrice;
+    targetProfitPct = tradePlan.weightedAvgTargetGainPct;
+    stopLossPct = tradePlan.stopLossPct;
+    riskRewardRatio = tradePlan.netRiskRewardRatio;
+
+    if (tradePlan.isWithinBuyZone) {
+      catalysts.push(`🎯 Optimal Buy Zone (৳${tradePlan.entryRangeMin} - ৳${tradePlan.entryRangeMax})`);
+    } else if (tradePlan.isOverextended) {
+      warningFlags.push(`⚠️ Overextended (+${tradePlan.chasePctFromPivot}% above ideal pivot)`);
+    }
+
+    if (tradePlan.netRiskRewardRatio >= 2.5) {
+      catalysts.push(`🛡️ High Net R:R (${tradePlan.netRiskRewardRatio}:1 after 0.5% DSE friction)`);
     }
 
     // Edge Analysis Factor — always start from this stock's own backtest sample so the
@@ -2483,7 +3266,7 @@ export function runDseStockScreener(
        catalysts.push(`🎯 ${finalDetectedPattern} Edge (${historicalEdgeWinRate.toFixed(0)}% Win Prob, ${edgeSampleSize} trades)`);
     }
     if (decisionStatus === 'STRONG_BUY') {
-      reasoning = `High-probability entry setup! Stock exploded with ${rvol20}x 20d ADV volume surge, breaking out from tight consolidation. Planned R:R is ${riskRewardRatio}:1 with +${targetProfitPct}% profit potential.`;
+      reasoning = `High-probability entry setup! Stock exploded with ${rvol20}x 20d ADV volume surge in buy range (৳${tradePlan.entryRangeMin} - ৳${tradePlan.entryRangeMax}). Net R:R is ${riskRewardRatio}:1 with +${targetProfitPct}% weighted target gain.`;
     } else if (decisionStatus === 'EARLY_TREND_IGNITION') {
       reasoning = `Early Trend Ignition detected! 5d MA crossed above 20d MA with rising OBV accumulation prior to major volume breakout. Ideal early-stage entry before broad market awareness.`;
     } else if (decisionStatus === 'WATCHLIST_BREAKOUT') {
@@ -2497,8 +3280,6 @@ export function runDseStockScreener(
     if (decisionStatus === 'STRONG_BUY') recommendedPositionSizePct = 15;
     if (decisionStatus === 'EARLY_TREND_IGNITION') recommendedPositionSizePct = 14;
     if (decisionStatus === 'WATCHLIST_BREAKOUT') recommendedPositionSizePct = 12;
-
-    
 
     candidates.push({
       symbol: stock.symbol,
@@ -2536,6 +3317,10 @@ export function runDseStockScreener(
       earlyTrendSignals: earlyTrend.signals,
       harmonicDetails: harmonic || undefined,
       sectorMoneyFlowPct,
+      warningFlags,
+      dseProfile,
+      tradePlan,
+      volumeFootprint
     });
   }
 

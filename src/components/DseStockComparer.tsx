@@ -37,18 +37,6 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
   edgeStats,
   onSelectStockForChart,
 }) => {
-  // Evaluated screener candidates map for detailed comparison
-  const screenerMap = useMemo(() => {
-    const map = new Map<string, ScreenerStockCandidate>();
-    stocks.forEach((st) => {
-      const candidate = evaluateStockForScreener(st, config, signals, edgeStats);
-      if (candidate) {
-        map.set(st.symbol, candidate);
-      }
-    });
-    return map;
-  }, [stocks, config, signals]);
-
   // Available stock symbols
   const stockSymbols = useMemo(() => stocks.map((s) => s.symbol), [stocks]);
 
@@ -62,9 +50,9 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
 
   const [modalCandidate, setModalCandidate] = useState<ScreenerStockCandidate | null>(null);
 
-  // Active Candidate Evaluations
-  const candA = useMemo(() => screenerMap.get(symbolA) || null, [screenerMap, symbolA]);
-  const candB = useMemo(() => screenerMap.get(symbolB) || null, [screenerMap, symbolB]);
+  // Directly evaluate only the selected candidates A and B instead of scanning the full universe
+  const candA = useMemo(() => (stockA ? evaluateStockForScreener(stockA, config, signals, edgeStats) : null), [stockA, config, signals, edgeStats]);
+  const candB = useMemo(() => (stockB ? evaluateStockForScreener(stockB, config, signals, edgeStats) : null), [stockB, config, signals, edgeStats]);
 
   // Signals specific to Stock A and Stock B
   const signalsA = useMemo(() => signals.filter((s) => s.symbol === symbolA), [signals, symbolA]);
@@ -392,14 +380,11 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
               onChange={(e) => setSymbolA(e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-white font-mono focus:outline-none focus:border-cyan-400"
             >
-              {stockSymbols.map((sym) => {
-                const cand = screenerMap.get(sym);
-                return (
-                  <option key={`a-${sym}`} value={sym}>
-                    {sym} - {cand ? `${cand.stockName} (${cand.profitPotentialScore}% Score)` : sym}
-                  </option>
-                );
-              })}
+              {stocks.map((st) => (
+                <option key={`a-${st.symbol}`} value={st.symbol}>
+                  {st.symbol} — {st.name} ({st.sector})
+                </option>
+              ))}
             </select>
           </div>
 
@@ -421,14 +406,11 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
               onChange={(e) => setSymbolB(e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-white font-mono focus:outline-none focus:border-purple-400"
             >
-              {stockSymbols.map((sym) => {
-                const cand = screenerMap.get(sym);
-                return (
-                  <option key={`b-${sym}`} value={sym}>
-                    {sym} - {cand ? `${cand.stockName} (${cand.profitPotentialScore}% Score)` : sym}
-                  </option>
-                );
-              })}
+              {stocks.map((st) => (
+                <option key={`b-${st.symbol}`} value={st.symbol}>
+                  {st.symbol} — {st.name} ({st.sector})
+                </option>
+              ))}
             </select>
           </div>
         </div>

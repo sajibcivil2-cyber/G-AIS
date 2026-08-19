@@ -8,30 +8,44 @@
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: #020617;
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99, 102, 241, 0.12), transparent),
-    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
-  background-size: 100% 100%, 32px 32px, 32px 32px;
-  background-attachment: fixed;
+  color: #f8fafc;
+  overflow-x: hidden;
 }
 
-/* Custom scrollbar for a more polished, less "default browser" feel */
+/* GPU-accelerated static background layer that doesn't trigger paint reflows during scroll */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+  background-color: #020617;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99, 102, 241, 0.10), transparent),
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+  background-size: 100% 100%, 32px 32px, 32px 32px;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
+/* Custom scrollbar for a more polished, responsive feel */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(15, 23, 42, 0.6);
 }
 ::-webkit-scrollbar-thumb {
   background-color: rgba(100, 116, 139, 0.4);
@@ -40,7 +54,7 @@ body {
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(148, 163, 184, 0.55);
+  background-color: rgba(148, 163, 184, 0.6);
   background-clip: padding-box;
 }
 
@@ -56,10 +70,20 @@ body {
   height: 6px;
 }
 
+/* Optimize nested scroll containers to prevent scroll chaining lockups */
+.overscroll-contain {
+  overscroll-behavior: contain;
+}
+
+/* Content visibility optimization for large lists */
+.card-content-contain {
+  contain: content;
+}
+
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-in {
-  animation: fade-in 0.2s ease-out;
+  animation: fade-in 0.15s ease-out;
 }

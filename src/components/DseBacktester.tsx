@@ -28,7 +28,9 @@ import {
   Bell,
   Trash2,
   Plus,
-  Upload
+  Upload,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { DseStockData, DseStockCandle, BacktestConfig, BacktestSummary, BreakoutSignal, ExtractedFile, SectorMoneyFlowStat } from '../types';
 import {
@@ -74,15 +76,27 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
   // Navigation State inside Backtest Hub
   const [activeSubTab, setActiveSubTab] = useState<'screener' | 'compare' | 'chart' | 'lab' | 'edge' | 'postmortem'>('screener');
 
+  // Collapsed by default so screener/comparer/chart results are visible right after the tab
+  // bar instead of requiring a long scroll past the summary/sector/pattern widgets first.
+  // Remembers the user's last choice across visits.
+  const [showMarketOverview, setShowMarketOverview] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('dse_show_market_overview');
+      return saved === null ? false : saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   // Strategy Configuration State
   const [config, setConfig] = useState<BacktestConfig>({
-    minYoyGrowthPct: 4.0, // Realistic DSE YoY growth
-    volumeSurgeMultiplier: 3.0, // 3x 20-day ADV
+    minYoyGrowthPct: 0.0, // Set to 0 so pure price-action datasets aren't blocked
+    volumeSurgeMultiplier: 2.0, // 2x 20-day ADV is a strong standard
     microConsolidationDays: 5,
     macroBaseDays: 30,
     stopLossPct: 5.0,
     targetProfitPct: 15.0,
-    minTurnoverMillionBdt: 20.0,
+    minTurnoverMillionBdt: 0.0, // Set to 0 to prevent filtering out raw price-only datasets
   });
 
   const [activeStockPool, setActiveStockPool] = useState<DseStockData[]>(() => applySectorOverrides(filterActiveStocks(DSE_SAMPLE_STOCKS)));
@@ -560,39 +574,70 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         isDatabaseLoaded={isDatabaseLoaded}
       />
 
-      {/* Algorithmic Market Scan Summary Dashboard */}
-      <BacktestSummaryDashboard
-        summary={backtestResult}
-        config={config}
-        scannedStockCount={displayedStocks.length}
-        selectedSector={selectedSectorFilter}
-        onJumpToSignal={(sig) => {
-          setSelectedSignal(sig);
-          setChartTargetSymbol(sig.symbol);
-          setActiveSubTab('chart');
-        }}
-        onOpenStrategyLab={() => setActiveSubTab('lab')}
-        onOpenStopLossDiagnostics={() => setActiveSubTab('postmortem')}
-      />
+      {/* Market Overview — collapsed by default so screener/comparer/chart results are
+          visible right after the tab bar instead of requiring a long scroll past these
+          three widgets first. Expand when you actually want the sector/pattern context. */}
+      <div className="border border-slate-800 rounded-2xl bg-slate-900/40 overflow-hidden">
+        <button
+          onClick={() => setShowMarketOverview((prev) => {
+            const next = !prev;
+            try { localStorage.setItem('dse_show_market_overview', String(next)); } catch {}
+            return next;
+          })}
+          className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors"
+        >
+          <span className="flex items-center gap-2 text-sm font-bold text-slate-200">
+            <BarChart2 className="w-4 h-4 text-indigo-400" />
+            Market Overview
+            <span className="text-[10px] font-normal text-slate-500 font-mono">
+              (Backtest Summary · Sector Money Flow · Pattern Scan Alerts)
+            </span>
+          </span>
+          {showMarketOverview ? (
+            <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+          )}
+        </button>
 
-      {/* Sector Money Flow Matrix & Rotation Analytics */}
-      <SectorMoneyFlowMatrix
-        stocks={activeStockPool}
-        selectedSector={selectedSectorFilter}
-        onSelectSector={setSelectedSectorFilter}
-      />
+        {showMarketOverview && (
+          <div className="px-4 pb-4 space-y-4 border-t border-slate-800/80 pt-4">
+            {/* Algorithmic Market Scan Summary Dashboard */}
+            <BacktestSummaryDashboard
+              summary={backtestResult}
+              config={config}
+              scannedStockCount={displayedStocks.length}
+              selectedSector={selectedSectorFilter}
+              onJumpToSignal={(sig) => {
+                setSelectedSignal(sig);
+                setChartTargetSymbol(sig.symbol);
+                setActiveSubTab('chart');
+              }}
+              onOpenStrategyLab={() => setActiveSubTab('lab')}
+              onOpenStopLossDiagnostics={() => setActiveSubTab('postmortem')}
+            />
 
-      {/* Technical Pattern Scan Notification & Alert Matrix */}
-      <PatternScanNotifier
-        signals={backtestResult.signals}
-        selectedPatternFilter={selectedPatternFilter}
-        onSelectPatternFilter={setSelectedPatternFilter}
-        onJumpToSignal={(sig) => {
-          setSelectedSignal(sig);
-          setChartTargetSymbol(sig.symbol);
-          setActiveSubTab('chart');
-        }}
-      />
+            {/* Sector Money Flow Matrix & Rotation Analytics */}
+            <SectorMoneyFlowMatrix
+              stocks={activeStockPool}
+              selectedSector={selectedSectorFilter}
+              onSelectSector={setSelectedSectorFilter}
+            />
+
+            {/* Technical Pattern Scan Notification & Alert Matrix */}
+            <PatternScanNotifier
+              signals={backtestResult.signals}
+              selectedPatternFilter={selectedPatternFilter}
+              onSelectPatternFilter={setSelectedPatternFilter}
+              onJumpToSignal={(sig) => {
+                setSelectedSignal(sig);
+                setChartTargetSymbol(sig.symbol);
+                setActiveSubTab('chart');
+              }}
+            />
+          </div>
+        )}
+      </div>
 
       {/* VIEW 1: High Profit Screener */}
       {activeSubTab === 'screener' && (

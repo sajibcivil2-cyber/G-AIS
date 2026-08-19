@@ -1218,6 +1218,8 @@ const D3ChartCanvas: React.FC<D3ChartCanvasProps> = React.memo(({
     const focusLineX = g.append('line').attr('y1', 0).attr('y2', chartHeight).attr('stroke', '#64748b').attr('stroke-dasharray', '2,2').style('opacity', 0);
     const focusLineY = g.append('line').attr('x1', 0).attr('x2', chartWidth).attr('stroke', '#64748b').attr('stroke-dasharray', '2,2').style('opacity', 0);
 
+    let lastHoveredDate: string | null = null;
+
     overlay
       .on('mousemove', (event) => {
         const [mouseX, mouseY] = d3.pointer(event);
@@ -1230,12 +1232,16 @@ const D3ChartCanvas: React.FC<D3ChartCanvasProps> = React.memo(({
           const cx = (xScale(d.date) || 0) + bandwidth / 2;
           focusLineX.attr('x1', cx).attr('x2', cx).style('opacity', 1);
           focusLineY.attr('y1', mouseY).attr('y2', mouseY).style('opacity', 1);
-          setHoveredData(d);
+          if (lastHoveredDate !== d.date) {
+            lastHoveredDate = d.date;
+            setHoveredData(d);
+          }
         }
       })
       .on('mouseleave', () => {
         focusLineX.style('opacity', 0);
         focusLineY.style('opacity', 0);
+        lastHoveredDate = null;
         setHoveredData(null);
       });
   }, [

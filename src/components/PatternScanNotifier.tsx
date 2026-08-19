@@ -59,8 +59,20 @@ export const PatternScanNotifier: React.FC<PatternScanNotifierProps> = ({
       'Cup & Handle',
       'Ascending Triangle',
       'VCP Compression',
+      'NR7 Breakout',
+      '20 EMA Pullback Bounce',
+      'Volume Dry-up (No Supply)',
+      'Bullish Engulfing Reversal',
+      'Morning Star Reversal',
+      'RSI Oversold Momentum Rebound',
       'Harmonic Pattern (C-to-D)',
       'Harmonic Pattern (D-Reversal)',
+      'Inverse Head & Shoulders',
+      'Falling Wedge Breakout',
+      'Rounding Bottom',
+      'MA 10/20/30 Crossover',
+      'Bullish Pennant',
+      'Symmetrical Triangle',
       'Box Range Consolidation',
     ];
 
@@ -114,6 +126,18 @@ export const PatternScanNotifier: React.FC<PatternScanNotifierProps> = ({
         return { icon: '🔺', label: 'Ascending Triangle', color: 'text-sky-300 bg-sky-500/20 border-sky-500/40' };
       case 'VCP Compression':
         return { icon: '⚡', label: 'VCP Volatility Coil', color: 'text-purple-300 bg-purple-500/20 border-purple-500/40' };
+      case 'NR7 Breakout':
+        return { icon: '🎯', label: 'NR7 Breakout (Narrow 7)', color: 'text-amber-400 bg-amber-500/20 border-amber-500/40' };
+      case '20 EMA Pullback Bounce':
+        return { icon: '🔄', label: '20 EMA Pullback Bounce', color: 'text-cyan-300 bg-cyan-500/20 border-cyan-500/40' };
+      case 'Volume Dry-up (No Supply)':
+        return { icon: '💧', label: 'Volume Dry-up (No Supply)', color: 'text-sky-300 bg-sky-500/20 border-sky-500/40' };
+      case 'Bullish Engulfing Reversal':
+        return { icon: '🔥', label: 'Bullish Engulfing Reversal', color: 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40' };
+      case 'Morning Star Reversal':
+        return { icon: '⭐', label: 'Morning Star Reversal', color: 'text-amber-300 bg-amber-500/20 border-amber-500/40' };
+      case 'RSI Oversold Momentum Rebound':
+        return { icon: '🚀', label: 'RSI Oversold Rebound', color: 'text-violet-300 bg-violet-500/20 border-violet-500/40' };
       case 'Harmonic Pattern (C-to-D)':
         return { icon: '🦋', label: 'Harmonic C-to-D', color: 'text-rose-400 bg-rose-500/20 border-rose-500/40' };
       case 'Harmonic Pattern (D-Reversal)':
