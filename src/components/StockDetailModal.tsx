@@ -32,7 +32,8 @@ import {
   Anchor,
   Rocket,
   Droplets,
-  Crosshair
+  Crosshair,
+  HelpCircle
 } from 'lucide-react';
 import { ScreenerStockCandidate, DseStockCandle, BacktestConfig, BreakoutSignal } from '../types';
 import { getDseMarketProfile, generateRealisticTradePlan, analyzeDseVolumeFootprint } from '../utils/dseBacktestEngine';
@@ -55,6 +56,47 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'volume-footprint' | 'trade-plan' | 'performance' | 'risk' | 'patterns' | 'dse-profile'>('overview');
   const [customAccountBdt, setCustomAccountBdt] = useState<number>(100000);
   const [customRiskPct, setCustomRiskPct] = useState<number>(1.5);
+
+  const [thesisLoading, setThesisLoading] = useState(false);
+  const [thesisData, setThesisData] = useState<{
+    grade?: string;
+    summary?: string;
+    catalystAndConfluence?: string[];
+    invalidationRule?: string;
+    liquidityRiskWarning?: string;
+  } | null>(null);
+
+  const handleGenerateThesis = async () => {
+    setThesisLoading(true);
+    try {
+      const res = await fetch('/api/gemini/technical-thesis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: candidate.symbol,
+          stockName: candidate.stockName,
+          sector: candidate.sector,
+          profitPotentialScore: candidate.profitPotentialScore,
+          entryPrice: candidate.entryPrice,
+          targetPrice: candidate.targetPrice,
+          stopLossPrice: candidate.stopLossPrice,
+          riskRewardRatio: candidate.riskRewardRatio,
+          rvol20: candidate.rvol20,
+          breakoutPattern: candidate.breakoutPattern,
+          detectedPattern: candidate.detectedPattern,
+          peRatio: candidate.peRatio,
+          yoyGrowthPct: candidate.yoyGrowthPct,
+          avgTurnoverBdtMillion: candidate.avgTurnoverBdtMillion
+        })
+      });
+      const data = await res.json();
+      setThesisData(data);
+    } catch (err) {
+      console.error('Thesis generation error:', err);
+    } finally {
+      setThesisLoading(false);
+    }
+  };
 
   const {
     symbol,
@@ -118,7 +160,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
   const candles = stock?.candles || [];
   const candleCount = candles.length;
 
-  const dseProfile = candidate.dseProfile || (stock ? getDseMarketProfile(stock, latestClose, candleCount > 1 ? candles[candleCount - 2].close : latestClose) : undefined);
+  const dseProfile = candidate.dseProfile || (stock ? getDseMarketProfile(stock, candles) : undefined);
 
   // Compute or reuse deep institutional volume footprint
   const volumeFootprint = React.useMemo(() => {
@@ -137,22 +179,14 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
         stock,
         candles,
         config || {
-          strategyType: 'VOLUME_BREAKOUT_BASIC',
-          minVolumeMultiplier: 2.0,
+          strategyType: 'VOLUME_BREAKOUT',
           volumeSurgeMultiplier: 2.0,
           targetProfitPct: 15,
           stopLossPct: 5,
-          breakoutLookbackDays: 20,
+          microConsolidationDays: 5,
           macroBaseDays: 60,
-          trailStopLoss: true,
-          requireMinerviniTrend: true,
-          requireYoyGrowth: false,
           minYoyGrowthPct: 0,
-          requirePeRatioMax: false,
-          maxPeRatio: 40,
-          requireAvgTurnoverMin: true,
-          minAvgTurnoverBdtMillion: 5.0,
-          useHarmonicConfluence: true
+          minTurnoverMillionBdt: 5.0
         },
         candidate.harmonicDetails,
         candidate.detectedPattern as any,
@@ -494,6 +528,57 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
         {/* TAB 1: OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="space-y-4">
+            {/* AI Confluence Thesis Card */}
+            <div className="bg-gradient-to-r from-indigo-950/80 via-slate-950 to-purple-950/80 border border-indigo-500/40 rounded-2xl p-4 shadow-xl space-y-3 font-mono">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <span className="text-xs font-black text-white uppercase tracking-wider">AI Quant Technical Thesis</span>
+                  {thesisData?.grade && (
+                    <span className="px-2 py-0.5 rounded text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      Grade {thesisData.grade} Setup
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleGenerateThesis}
+                  disabled={thesisLoading}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${thesisLoading ? 'animate-spin' : ''}`} />
+                  <span>{thesisLoading ? 'Synthesizing...' : thesisData ? 'Re-Analyze Setup' : '🤖 Generate Technical Thesis'}</span>
+                </button>
+              </div>
+
+              {thesisData ? (
+                <div className="space-y-2 text-xs">
+                  <p className="text-slate-200 leading-relaxed bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                    {thesisData.summary}
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                    <div className="bg-slate-900/80 p-3 rounded-xl border border-emerald-500/20 space-y-1">
+                      <div className="text-[10px] font-bold text-emerald-400 uppercase">Catalysts & Confluence</div>
+                      <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
+                        {thesisData.catalystAndConfluence?.map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="bg-slate-900/80 p-3 rounded-xl border border-rose-500/20 space-y-1">
+                      <div className="text-[10px] font-bold text-rose-400 uppercase">Invalidation Rule & Liquidity</div>
+                      <p className="text-slate-300 text-[11px]">{thesisData.invalidationRule}</p>
+                      <p className="text-amber-300 text-[10px] pt-1">{thesisData.liquidityRiskWarning}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Click <strong className="text-purple-300">"Generate Technical Thesis"</strong> to run an instant AI multi-factor analysis (Volume Footprint, Pattern Confluence, Valuation & Risk Invalidation Rules) for {symbol}.
+                </p>
+              )}
+            </div>
+
             {/* Top Metrics Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs font-mono">
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
@@ -1684,8 +1769,16 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
             {/* Top Overview Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Category & Settlement */}
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                <div className="text-[10px] text-slate-400 uppercase">DSE Listing Category</div>
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5 relative group">
+                <div className="text-[10px] text-slate-400 uppercase flex items-center gap-1">
+                  DSE Listing Category
+                  <HelpCircle className="w-3 h-3 text-slate-500 cursor-help" />
+                </div>
+                
+                {/* Tooltip */}
+                <div className="absolute left-0 bottom-full mb-2 w-48 bg-slate-800 text-slate-200 text-[10px] p-2 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10 shadow-xl border border-slate-700">
+                  Categories define settlement cycles and margin eligibility. Z is high-risk.
+                </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xl font-black ${
                     dseProfile?.category === 'A' ? 'text-blue-400' :
@@ -1721,24 +1814,30 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
               </div>
 
               {/* Market Float & Manipulation Risk */}
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                <div className="text-[10px] text-slate-400 uppercase">Float & Speculation Risk</div>
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5 relative group">
+                <div className="text-[10px] text-slate-400 uppercase flex items-center gap-1">
+                  Float & Speculation Risk
+                  <HelpCircle className="w-3 h-3 text-slate-500 cursor-help" />
+                </div>
+                
+                {/* Tooltip */}
+                <div className="absolute right-0 bottom-full mb-2 w-48 bg-slate-800 text-slate-200 text-[10px] p-2 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10 shadow-xl border border-slate-700">
+                  Low free float stocks with small paid-up capital (&lt;50 Cr) are easily cornered ("Item Stocks").
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-base font-bold text-white">
                     {dseProfile?.floatProfile || 'Mid Float'}
                   </span>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                    (dseProfile?.manipulationRiskScore || 20) > 50
+                    dseProfile?.itemStockRisk === 'HIGH' || (dseProfile?.manipulationRiskScore || 20) > 50
                       ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
                       : 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
                   }`}>
-                    Risk: {dseProfile?.manipulationRiskScore || 20}/100
+                    Risk: {dseProfile?.itemStockRisk === 'HIGH' ? 'ITEM STOCK' : dseProfile?.manipulationRiskScore + '/100'}
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400 font-sans leading-snug">
-                  {(dseProfile?.manipulationRiskScore || 20) > 50
-                    ? 'High speculative volatility risk. Avoid chasing rallies without strict stop loss.'
-                    : 'Institutional liquidity depth supports disciplined trade execution.'}
+                  Paid-Up Capital: ৳{dseProfile?.paidUpCapitalCrores?.toFixed(1) || '--'} Cr | Free Float: {dseProfile?.freeFloatPct || '--'}%
                 </p>
               </div>
             </div>
@@ -1746,14 +1845,21 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
             {/* Circuit Limit Visualizer Bar */}
             {dseProfile?.circuitInfo && (
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <span className="text-xs font-bold text-slate-200 uppercase flex items-center gap-1.5">
                     <Activity className="w-4 h-4 text-emerald-400" />
                     Intraday Circuit Breaker Range (Today's Bounds)
                   </span>
-                  <span className="text-[11px] text-slate-400">
-                    Previous Close: ৳{(entryPrice / (1 + (dseProfile.circuitInfo.changeFromPrevClosePct / 100))).toFixed(2)}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {dseProfile.circuitInfo.circuitLockStreak > 0 && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
+                        🔥 Circuit Lock Streak: {dseProfile.circuitInfo.circuitLockStreak} day(s)
+                      </span>
+                    )}
+                    <span className="text-[11px] text-slate-400">
+                      Previous Close: ৳{(entryPrice / (1 + (dseProfile.circuitInfo.changeFromPrevClosePct / 100))).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">

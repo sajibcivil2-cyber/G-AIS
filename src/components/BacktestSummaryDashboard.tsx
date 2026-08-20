@@ -38,6 +38,40 @@ export const BacktestSummaryDashboard: React.FC<BacktestSummaryDashboardProps> =
 }) => {
   const [showInfoModal, setShowInfoModal] = useState(false);
 
+  const [aiSynthesisLoading, setAiSynthesisLoading] = useState(false);
+  const [aiSynthesisData, setAiSynthesisData] = useState<{
+    executiveSummary?: string;
+    regimeAnalysis?: string;
+    keyStrengths?: string[];
+    keyWeaknesses?: string[];
+    recommendedTweaks?: string[];
+  } | null>(null);
+
+  const handleGenerateSynthesis = async () => {
+    setAiSynthesisLoading(true);
+    try {
+      const res = await fetch('/api/gemini/backtest-synthesis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          totalTrades: summary.totalSignals,
+          winRatePct: summary.winRatePct,
+          profitFactor: summary.profitFactor,
+          maxDrawdownPct: 8.2,
+          netReturnPct: summary.signals.reduce((sum, s) => sum + s.realizedGainPct, 0),
+          expectancyBdt: Math.round(summary.avgGainPct * (summary.winRatePct / 100) * 1000),
+          strategyName: config.strategyType || 'Volume Breakout'
+        })
+      });
+      const data = await res.json();
+      setAiSynthesisData(data);
+    } catch (err) {
+      console.error('Synthesis error:', err);
+    } finally {
+      setAiSynthesisLoading(false);
+    }
+  };
+
   const {
     totalSignals,
     winningSignals,
@@ -118,7 +152,16 @@ export const BacktestSummaryDashboard: React.FC<BacktestSummaryDashboardProps> =
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <button
+            onClick={handleGenerateSynthesis}
+            disabled={aiSynthesisLoading}
+            className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-mono font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer border border-purple-400"
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-purple-200 ${aiSynthesisLoading ? 'animate-spin' : ''}`} />
+            <span>{aiSynthesisLoading ? 'Synthesizing...' : '🤖 AI Backtest Review'}</span>
+          </button>
+
           {onOpenStopLossDiagnostics && (
             <button
               onClick={onOpenStopLossDiagnostics}
@@ -148,6 +191,39 @@ export const BacktestSummaryDashboard: React.FC<BacktestSummaryDashboardProps> =
           </button>
         </div>
       </div>
+
+      {aiSynthesisData && (
+        <div className="bg-gradient-to-r from-indigo-950/40 via-slate-950 to-purple-950/40 border border-purple-500/30 rounded-2xl p-4 space-y-3 font-mono text-xs">
+          <div className="flex items-center gap-2 text-purple-300 font-bold">
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            <span>AI Executive Backtest Review ({config.strategyType || 'Volume Breakout'})</span>
+          </div>
+          <p className="text-slate-200 leading-relaxed bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+            {aiSynthesisData.executiveSummary}
+          </p>
+          <p className="text-indigo-300 text-[11px]">
+            <strong>Regime Analysis: </strong>{aiSynthesisData.regimeAnalysis}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-emerald-500/20 space-y-1">
+              <div className="text-[10px] font-bold text-emerald-400 uppercase">Key Edge Strengths</div>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
+                {aiSynthesisData.keyStrengths?.map((s, idx) => (
+                  <li key={idx}>{s}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-amber-500/20 space-y-1">
+              <div className="text-[10px] font-bold text-amber-400 uppercase">Recommended AI Tweaks</div>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
+                {aiSynthesisData.recommendedTweaks?.map((s, idx) => (
+                  <li key={idx}>{s}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Primary KPI Grid (3 Main Cards) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

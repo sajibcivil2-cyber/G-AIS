@@ -16,6 +16,7 @@ import { saveDatabaseToStorage, exportDatabaseToFile, getLastSavedTimestamp, cle
 interface DatabaseStatusBarProps {
   stocks: DseStockData[];
   isDatabaseLoaded: boolean;
+  onResetDatabase?: () => void;
 }
 
 // Shows how stale the loaded dataset is and provides local database controls (save/export/
@@ -29,6 +30,7 @@ interface DatabaseStatusBarProps {
 export const DatabaseStatusBar: React.FC<DatabaseStatusBarProps> = ({
   stocks,
   isDatabaseLoaded,
+  onResetDatabase,
 }) => {
   const [freshness, setFreshness] = useState<BdShareSyncStatus>(() => getDatasetFreshness(stocks));
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -59,9 +61,23 @@ export const DatabaseStatusBar: React.FC<DatabaseStatusBarProps> = ({
 
   const handleFactoryReset = async () => {
     if (confirm('Are you sure you want to completely reset the database to factory defaults? This will erase your saved dataset.')) {
-      await clearDatabaseStorage();
-      alert('Database wiped successfully. Reloading page to apply defaults.');
-      window.location.reload();
+      try {
+        setIsSaving(true);
+        await clearDatabaseStorage();
+        setLastSaved(null);
+        setNotice({ type: 'success', message: 'Database wiped successfully. Resetting to factory defaults...' });
+        if (onResetDatabase) {
+          onResetDatabase();
+        } else {
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        }
+      } catch (err: any) {
+        setNotice({ type: 'error', message: err.message || 'Failed to reset database.' });
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
 

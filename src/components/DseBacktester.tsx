@@ -58,6 +58,7 @@ import { SectorMoneyFlowMatrix } from './SectorMoneyFlowMatrix';
 import { BacktestSummaryDashboard } from './BacktestSummaryDashboard';
 import { StockDetailModal } from './StockDetailModal';
 import { EdgeAnalysisDashboard } from './EdgeAnalysisDashboard';
+import { TradeJournal } from './TradeJournal';
 import { StopLossPostMortemDashboard } from './StopLossPostMortemDashboard';
 import {
   loadDatabaseFromStorage,
@@ -74,7 +75,7 @@ interface DseBacktesterProps {
 
 export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) => {
   // Navigation State inside Backtest Hub
-  const [activeSubTab, setActiveSubTab] = useState<'screener' | 'compare' | 'chart' | 'lab' | 'edge' | 'postmortem'>('screener');
+  const [activeSubTab, setActiveSubTab] = useState<'screener' | 'compare' | 'chart' | 'lab' | 'edge' | 'postmortem' | 'journal'>('screener');
 
   // Collapsed by default so screener/comparer/chart results are visible right after the tab
   // bar instead of requiring a long scroll past the summary/sector/pattern widgets first.
@@ -455,9 +456,9 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
       )}
 
       {/* Navigation Sub-Header Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/70 border border-slate-800 p-2 rounded-2xl shadow-xl backdrop-blur-sm">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/40 border border-slate-800 p-3 rounded-[2rem] shadow-xl backdrop-blur-md">
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto scrollbar-thin pb-1 sm:pb-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto scrollbar-thin pb-1 sm:pb-0 px-1">
           <TabButton
             active={activeSubTab === 'screener'}
             onClick={() => setActiveSubTab('screener')}
@@ -493,6 +494,12 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
             onClick={() => setActiveSubTab('postmortem')}
             icon={<ShieldAlert className="w-4 h-4" />}
             label="Post-Mortem"
+          />
+          <TabButton
+            active={activeSubTab === 'journal'}
+            onClick={() => setActiveSubTab('journal')}
+            icon={<BookOpen className="w-4 h-4" />}
+            label="Journal"
           />
           <div className="w-px h-6 bg-slate-800 mx-1 shrink-0" />
           <TabButton
@@ -572,36 +579,77 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
       <DatabaseStatusBar
         stocks={activeStockPool}
         isDatabaseLoaded={isDatabaseLoaded}
+        onResetDatabase={() => {
+          const defaultPool = applySectorOverrides(filterActiveStocks(DSE_SAMPLE_STOCKS));
+          setActiveStockPool(defaultPool);
+          setCustomFileLoaded(null);
+          setDataQualityNotice('Database reset to factory default DSE sample dataset.');
+          setTimeout(() => setDataQualityNotice(null), 6000);
+        }}
       />
 
-      {/* Market Overview — collapsed by default so screener/comparer/chart results are
-          visible right after the tab bar instead of requiring a long scroll past these
-          three widgets first. Expand when you actually want the sector/pattern context. */}
-      <div className="border border-slate-800 rounded-2xl bg-slate-900/40 overflow-hidden">
-        <button
-          onClick={() => setShowMarketOverview((prev) => {
-            const next = !prev;
-            try { localStorage.setItem('dse_show_market_overview', String(next)); } catch {}
-            return next;
-          })}
-          className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors"
-        >
-          <span className="flex items-center gap-2 text-sm font-bold text-slate-200">
-            <BarChart2 className="w-4 h-4 text-indigo-400" />
-            Market Overview
-            <span className="text-[10px] font-normal text-slate-500 font-mono">
-              (Backtest Summary · Sector Money Flow · Pattern Scan Alerts)
-            </span>
-          </span>
-          {showMarketOverview ? (
-            <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-          )}
-        </button>
+      {/* Modern Empty State (Zero Data) */}
+      {isDatabaseLoaded && activeStockPool.length === 0 && (
+        <div className="flex flex-col items-center justify-center p-12 bg-slate-900 border border-slate-800 border-dashed rounded-3xl space-y-5 text-center mt-6">
+          <div className="w-20 h-20 bg-indigo-950/50 rounded-full flex items-center justify-center border border-indigo-500/20 mb-2">
+            <Database className="w-10 h-10 text-indigo-400" />
+          </div>
+          <div className="space-y-2 max-w-md">
+            <h2 className="text-xl font-black text-white tracking-tight">No DSE Data Loaded</h2>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Your database is currently empty. Upload historical CSVs from the Dhaka Stock Exchange or bulk load a ZIP file to activate the screener, sector flow matrix, and pattern recognition engine.
+            </p>
+          </div>
+          
+          <label
+            htmlFor="empty-state-upload"
+            className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold cursor-pointer shadow-xl shadow-indigo-900/30 flex items-center gap-2 transition-transform hover:scale-105 mt-2"
+          >
+            <Upload className="w-5 h-5" />
+            <span>Upload CSV/ZIP Dataset</span>
+            <input
+              id="empty-state-upload"
+              type="file"
+              multiple
+              accept=".csv,.json,.txt,.zip"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+          </label>
+        </div>
+      )}
 
-        {showMarketOverview && (
-          <div className="px-4 pb-4 space-y-4 border-t border-slate-800/80 pt-4">
+      {/* Main Content Rendered Only When Data Exists */}
+      {activeStockPool.length > 0 && (
+        <>
+          {/* Market Overview — collapsed by default so screener/comparer/chart results are
+              visible right after the tab bar instead of requiring a long scroll past these
+              three widgets first. Expand when you actually want the sector/pattern context. */}
+          <div className="border border-slate-800 rounded-2xl bg-slate-900/40 overflow-hidden">
+            <button
+              onClick={() => setShowMarketOverview((prev) => {
+                const next = !prev;
+                try { localStorage.setItem('dse_show_market_overview', String(next)); } catch {}
+                return next;
+              })}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-bold text-slate-200">
+                <BarChart2 className="w-4 h-4 text-indigo-400" />
+                Market Overview
+                <span className="text-[10px] font-normal text-slate-500 font-mono">
+                  (Backtest Summary · Sector Money Flow · Pattern Scan Alerts)
+                </span>
+              </span>
+              {showMarketOverview ? (
+                <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              )}
+            </button>
+
+            {showMarketOverview && (
+              <div className="px-4 pb-4 space-y-4 border-t border-slate-800/80 pt-4">
             {/* Algorithmic Market Scan Summary Dashboard */}
             <BacktestSummaryDashboard
               summary={backtestResult}
@@ -1321,6 +1369,18 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         />
       )}
 
+      {/* VIEW 6: Trade Journal */}
+      {activeSubTab === 'journal' && (
+        <TradeJournal 
+          breakoutSignals={backtestResult.signals}
+          stocks={activeStockPool}
+          onApplyOptimizedConfig={(newConfig) => {
+            setConfig((prev) => ({ ...prev, ...newConfig }));
+            setActiveSubTab('screener');
+          }}
+        />
+      )}
+
       {/* Toast Notifications */}
       {activeToastAlerts.length > 0 && (
         <div className="fixed bottom-6 right-6 z-50 space-y-3 max-w-sm w-full">
@@ -1440,6 +1500,9 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
           </div>
         </div>
       )}
+      
+        </>
+      )}
 
     </div>
   );
@@ -1454,16 +1517,18 @@ const TabButton: React.FC<{
 }> = ({ active, onClick, icon, label, badge }) => (
   <button
     onClick={onClick}
-    className={`relative shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+    className={`relative shrink-0 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2.5 group ${
       active
-        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/30'
-        : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+        ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-xl shadow-emerald-900/40 border border-emerald-400/50 scale-105 z-10'
+        : 'text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-transparent hover:border-slate-700/80'
     }`}
   >
-    <span className={active ? 'text-emerald-200' : 'text-slate-500'}>{icon}</span>
-    <span className="whitespace-nowrap">{label}</span>
+    <span className={`transition-transform duration-300 ${active ? 'text-emerald-100 scale-110' : 'text-slate-500 group-hover:text-emerald-400 group-hover:scale-110'}`}>
+      {icon}
+    </span>
+    <span className="whitespace-nowrap tracking-wide">{label}</span>
     {badge !== undefined && (
-      <span className="ml-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+      <span className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center shadow-md shadow-rose-900/50">
         {badge}
       </span>
     )}

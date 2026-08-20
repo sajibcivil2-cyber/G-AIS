@@ -638,6 +638,40 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
   const [isBatchUploading, setIsBatchUploading] = useState(false);
   const [batchStatus, setBatchStatus] = useState('');
 
+  // Natural Language AI Screener State
+  const [nlQuery, setNlQuery] = useState('');
+  const [nlLoading, setNlLoading] = useState(false);
+  const [nlExplanation, setNlExplanation] = useState<string | null>(null);
+
+  const handleNaturalQuerySubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!nlQuery.trim()) return;
+    setNlLoading(true);
+    setNlExplanation(null);
+    try {
+      const res = await fetch('/api/gemini/natural-screener', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: nlQuery })
+      });
+      const data = await res.json();
+      if (data.config) {
+        if (data.config.sectorFilter) setSelectedSector(data.config.sectorFilter);
+        if (data.config.patternFilter) setSearchQuery(data.config.patternFilter);
+        if (data.config.minScore) setMinScoreFilter(data.config.minScore);
+        if (data.config.minRiskReward) setMinRiskRewardFilter(data.config.minRiskReward);
+      }
+      if (data.explanation) {
+        setNlExplanation(data.explanation);
+      }
+      setCurrentPage(1);
+    } catch (err) {
+      console.error('Natural screener compilation error:', err);
+    } finally {
+      setNlLoading(false);
+    }
+  };
+
   // Handle Loading Full 100+ DSE Market Universe
   const handleLoadFullUniverse = async () => {
     setIsBatchUploading(true);
@@ -1372,6 +1406,39 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
       {/* Interactive Controls & Filters Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+        {/* Natural Language AI Screener Input */}
+        <form onSubmit={handleNaturalQuerySubmit} className="bg-gradient-to-r from-purple-950/60 via-slate-950 to-indigo-950/60 p-3.5 rounded-xl border border-purple-500/40 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5 font-mono">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <span>AI Natural Language Screener Compiler</span>
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono">Type custom queries like "Engineering stocks with volume surge &gt; 2.5x and positive growth"</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={nlQuery}
+              onChange={(e) => setNlQuery(e.target.value)}
+              placeholder="e.g. Find Bank sector stocks with VCP compression, high volume surge, and R:R > 2.0..."
+              className="flex-1 bg-slate-900 border border-purple-500/30 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 font-mono"
+            />
+            <button
+              type="submit"
+              disabled={nlLoading || !nlQuery.trim()}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 font-mono cursor-pointer shrink-0"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${nlLoading ? 'animate-spin' : ''}`} />
+              <span>{nlLoading ? 'Compiling Query...' : 'Apply AI Filter'}</span>
+            </button>
+          </div>
+          {nlExplanation && (
+            <div className="text-[11px] font-mono text-purple-300 bg-purple-950/40 p-2 rounded-lg border border-purple-500/20">
+              💡 {nlExplanation}
+            </div>
+          )}
+        </form>
+
         {/* Market Universe Expansion & Action Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-gradient-to-r from-slate-950 via-indigo-950/30 to-slate-950 p-3 rounded-xl border border-indigo-500/30">
           <div className="flex items-center gap-2 text-xs">
@@ -1545,6 +1612,78 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Quick Filter Presets (User Friendliness Enhancement) */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
+          <span className="text-[10px] text-slate-400 font-bold uppercase mr-1 flex items-center gap-1">
+            <Zap className="w-3 h-3 text-amber-400" />
+            1-Click Presets:
+          </span>
+          
+          <button 
+            onClick={() => {
+              setSelectedStatus('ALL');
+              setSelectedSector('ALL');
+              setSelectedDseCategory('EXCLUDE_Z');
+              setMinScoreFilter(60);
+              setMinRiskRewardFilter(2.0);
+              setMinVolumeScore(0);
+              setSortBy('score');
+              setCurrentPage(1);
+            }}
+            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 transition-colors"
+          >
+            🛡️ Safe Blue Chips (Cat A/B + Score &gt; 60)
+          </button>
+
+          <button 
+            onClick={() => {
+              setSelectedStatus('STRONG_BUY');
+              setSelectedSector('ALL');
+              setSelectedDseCategory('ALL');
+              setMinScoreFilter(0);
+              setMinRiskRewardFilter(1.5);
+              setMinVolumeScore(65);
+              setSortBy('rvol');
+              setCurrentPage(1);
+            }}
+            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors"
+          >
+            🚀 High Momentum (Strong Buy + High RVOL)
+          </button>
+
+          <button 
+            onClick={() => {
+              setSelectedStatus('ALL');
+              setSelectedSector('ALL');
+              setSelectedDseCategory('EXCLUDE_Z');
+              setMinScoreFilter(0);
+              setMinRiskRewardFilter(0);
+              setMinVolumeScore(80);
+              setSortBy('volumeScore');
+              setCurrentPage(1);
+            }}
+            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-colors"
+          >
+            🐋 Institutional Stealth Accumulators
+          </button>
+          
+          <button 
+            onClick={() => {
+              setSelectedStatus('ALL');
+              setSelectedSector('ALL');
+              setSelectedDseCategory('ALL');
+              setMinScoreFilter(0);
+              setMinRiskRewardFilter(0);
+              setMinVolumeScore(0);
+              setSortBy('score');
+              setCurrentPage(1);
+            }}
+            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-colors"
+          >
+            Reset All Filters
+          </button>
         </div>
 
         {/* Multi-Factor Screener Filters & Sort Row */}

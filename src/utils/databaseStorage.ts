@@ -487,6 +487,9 @@ export function getLastSavedTimestamp(): string | null {
 
 // Clear Database completely
 export async function clearDatabaseStorage(): Promise<void> {
+  // First close any active cached database connection
+  closeCachedDB();
+
   try {
     localStorage.removeItem(LOCALSTORAGE_KEY);
     localStorage.removeItem(TIMESTAMP_KEY);
@@ -494,28 +497,20 @@ export async function clearDatabaseStorage(): Promise<void> {
     // Ignored
   }
 
-  try {
-    const db = await getOrOpenDB();
-    if (db) {
+  if (typeof window !== 'undefined' && window.indexedDB) {
+    try {
       await new Promise<void>((resolve) => {
-        try {
-          const tx = db.transaction(STORE_NAME, 'readwrite');
-          const store = tx.objectStore(STORE_NAME);
-          const req = store.clear();
-          req.onsuccess = () => resolve();
-          req.onerror = () => resolve();
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => resolve();
-        } catch (_) {
-          resolve();
-        }
+        const deleteReq = window.indexedDB.deleteDatabase(DB_NAME);
+        deleteReq.onsuccess = () => resolve();
+        deleteReq.onerror = () => resolve();
+        deleteReq.onblocked = () => resolve();
       });
+    } catch (err) {
+      console.warn('IndexedDB deleteDatabase notice:', err);
     }
-  } catch (err) {
-    console.warn('Failed to clear IndexedDB:', err);
-  } finally {
-    closeCachedDB();
   }
+
+  closeCachedDB();
 }
 
 // Export database as JSON file for download

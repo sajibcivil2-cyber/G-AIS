@@ -5,24 +5,10 @@
       "description": "User saved DSE stock symbols and custom notes",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Owner user ID"
-        },
-        "symbol": {
-          "type": "string",
-          "description": "Stock trading symbol",
-          "maxLength": 30
-        },
-        "notes": {
-          "type": "string",
-          "description": "Custom trading notes",
-          "maxLength": 500
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "symbol": { "type": "string", "description": "Stock trading symbol", "maxLength": 30 },
+        "notes": { "type": "string", "description": "Custom trading notes", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "symbol", "createdAt"]
     },
@@ -31,28 +17,12 @@
       "description": "Saved DSE backtest strategy report",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Owner user ID"
-        },
-        "strategyName": {
-          "type": "string",
-          "description": "Strategy name",
-          "maxLength": 100
-        },
-        "totalTrades": {
-          "type": "number"
-        },
-        "winRate": {
-          "type": "number"
-        },
-        "profitFactor": {
-          "type": "number"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "strategyName": { "type": "string", "description": "Strategy name", "maxLength": 100 },
+        "totalTrades": { "type": "number" },
+        "winRate": { "type": "number" },
+        "profitFactor": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "strategyName", "createdAt"]
     },
@@ -61,24 +31,11 @@
       "description": "Target price alert for a DSE stock symbol",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string"
-        },
-        "symbol": {
-          "type": "string",
-          "maxLength": 30
-        },
-        "targetPrice": {
-          "type": "number"
-        },
-        "condition": {
-          "type": "string",
-          "enum": ["ABOVE", "BELOW"]
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
+        "userId": { "type": "string" },
+        "symbol": { "type": "string", "maxLength": 30 },
+        "targetPrice": { "type": "number" },
+        "condition": { "type": "string", "enum": ["ABOVE", "BELOW"] },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "symbol", "targetPrice", "condition", "createdAt"]
     },
@@ -87,30 +44,36 @@
       "description": "User custom default backtest & screener parameters",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string"
-        },
-        "initialCapital": {
-          "type": "number"
-        },
-        "positionSizePct": {
-          "type": "number"
-        },
-        "maxRiskPerTradePct": {
-          "type": "number"
-        },
-        "stopLossPct": {
-          "type": "number"
-        },
-        "targetProfitPct": {
-          "type": "number"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
+        "userId": { "type": "string" },
+        "initialCapital": { "type": "number" },
+        "positionSizePct": { "type": "number" },
+        "maxRiskPerTradePct": { "type": "number" },
+        "stopLossPct": { "type": "number" },
+        "targetProfitPct": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "updatedAt"]
+    },
+    "TradeLog": {
+      "title": "Trade Log",
+      "description": "User's individual trade logs for journaling",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "symbol": { "type": "string", "maxLength": 30 },
+        "entryDate": { "type": "string", "maxLength": 30 },
+        "entryPrice": { "type": "number" },
+        "exitDate": { "type": "string", "maxLength": 30 },
+        "exitPrice": { "type": "number" },
+        "shares": { "type": "number" },
+        "status": { "type": "string", "enum": ["OPEN", "CLOSED"] },
+        "pnlBdt": { "type": "number" },
+        "pnlPct": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "symbol", "entryDate", "entryPrice", "shares", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -129,6 +92,10 @@
     "/users/{userId}/settings/{settingId}": {
       "schema": { "$ref": "#/entities/UserPreference" },
       "description": "User default settings and preferences"
+    },
+    "/users/{userId}/tradelogs/{tradeId}": {
+      "schema": { "$ref": "#/entities/TradeLog" },
+      "description": "User trade journal records"
     }
   }
 }

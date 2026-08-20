@@ -33,6 +33,36 @@ export const StopLossPostMortemDashboard: React.FC<StopLossPostMortemDashboardPr
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
   const [activePatternModal, setActivePatternModal] = useState<StopLossFailurePattern | null>(null);
   const [appliedToast, setAppliedToast] = useState(false);
+  const [aiAuditLoading, setAiAuditLoading] = useState(false);
+  const [aiAuditResult, setAiAuditResult] = useState<{
+    auditTitle?: string;
+    coreDiagnosis?: string;
+    repeatingTraps?: string[];
+    mitigationSteps?: string[];
+    recommendedConfig?: any;
+  } | null>(null);
+
+  const handleRunAiAudit = async () => {
+    if (!report) return;
+    setAiAuditLoading(true);
+    try {
+      const res = await fetch('/api/gemini/post-mortem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          totalStopLossHits: report.totalStopLossHits,
+          totalStopLossPct: report.totalStopLossPct,
+          failurePatterns: report.failurePatterns
+        })
+      });
+      const data = await res.json();
+      setAiAuditResult(data);
+    } catch (err) {
+      console.error('AI Audit error:', err);
+    } finally {
+      setAiAuditLoading(false);
+    }
+  };
 
   const handleApplyRules = () => {
     if (onAutoApplyMitigationRules) {
@@ -80,14 +110,23 @@ export const StopLossPostMortemDashboard: React.FC<StopLossPostMortemDashboardPr
             </p>
           </div>
 
-          <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
+          <div className="flex items-center gap-3 self-start md:self-auto shrink-0 flex-wrap">
+            <button
+              onClick={handleRunAiAudit}
+              disabled={aiAuditLoading}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs shadow-lg shadow-purple-950/50 flex items-center gap-2 transition-all border border-purple-400 disabled:opacity-50"
+            >
+              <Sparkles className={`w-4 h-4 text-purple-200 ${aiAuditLoading ? 'animate-spin' : ''}`} />
+              <span>{aiAuditLoading ? 'Analyzing Failure Patterns...' : '🤖 Generate AI Failure Audit'}</span>
+            </button>
+
             {onAutoApplyMitigationRules && (
               <button
                 onClick={handleApplyRules}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-950/50 flex items-center gap-2 transition-all border border-emerald-400"
               >
                 <Zap className="w-4 h-4 text-amber-300 animate-pulse" />
-                <span>⚡ 1-Click Auto-Apply All Mitigation Rules</span>
+                <span>⚡ 1-Click Auto-Apply Mitigation Rules</span>
               </button>
             )}
 
@@ -97,6 +136,34 @@ export const StopLossPostMortemDashboard: React.FC<StopLossPostMortemDashboardPr
             </div>
           </div>
         </div>
+
+        {aiAuditResult && (
+          <div className="mt-4 bg-purple-950/30 border border-purple-500/30 rounded-2xl p-5 text-slate-200 space-y-3">
+            <div className="flex items-center gap-2 text-purple-300 font-bold text-sm">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <span>{aiAuditResult.auditTitle || 'AI Failure Post-Mortem Diagnosis'}</span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed font-mono">{aiAuditResult.coreDiagnosis}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-rose-500/20 space-y-1">
+                <div className="text-[11px] font-bold text-rose-400 uppercase tracking-wider">Repeating Market Traps</div>
+                <ul className="list-disc list-inside space-y-1 text-slate-400">
+                  {aiAuditResult.repeatingTraps?.map((trap, i) => (
+                    <li key={i}>{trap}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-emerald-500/20 space-y-1">
+                <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">AI Mitigation Rules</div>
+                <ul className="list-disc list-inside space-y-1 text-slate-400">
+                  {aiAuditResult.mitigationSteps?.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
 
         {appliedToast && (
           <div className="bg-emerald-950/80 border border-emerald-500/50 p-3 rounded-xl text-emerald-300 text-xs font-bold font-mono flex items-center gap-2 animate-bounce">

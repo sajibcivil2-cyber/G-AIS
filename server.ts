@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import { geminiRouter } from './src/server/geminiApi';
 
 dotenv.config();
 
@@ -11,6 +12,9 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '20mb' }));
+
+  // API Routes
+  app.use('/api/gemini', geminiRouter);
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

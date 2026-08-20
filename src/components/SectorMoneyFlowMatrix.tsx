@@ -11,7 +11,8 @@ import {
   ChevronRight,
   Filter,
   Activity,
-  Layers
+  Layers,
+  Sparkles
 } from 'lucide-react';
 import { DseStockData } from '../types';
 
@@ -29,7 +30,8 @@ export interface SectorAnalytics {
   moneyFlowExpansionRatio: number; // e.g. 2.15x
   marketMoneyFlowSharePct: number; // % of total market volume
   estimatedMarketCapCrores: number;
-  turnoverVelocityPct: number; // Turnover / Market Cap ratio
+  turnoverVelocityPct: number;
+  velocity3dPct: number; // Turnover / Market Cap ratio
   status: 'REPEATING_BREAKOUT' | 'ACCUMULATING' | 'CONSOLIDATING' | 'OUTFLOW';
   topMoverSymbol: string;
   topMoverGainPct: number;
@@ -42,6 +44,39 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
 }) => {
   const [showExplanationModal, setShowExplanationModal] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
+
+  const [aiSectorLoading, setAiSectorLoading] = useState(false);
+  const [aiSectorData, setAiSectorData] = useState<{
+    narrativeTitle?: string;
+    capitalRotationSummary?: string;
+    dominantSectors?: string[];
+    laggingSectors?: string[];
+    marketBreadthWarning?: string;
+  } | null>(null);
+
+  const handleGenerateSectorNarrative = async () => {
+    setAiSectorLoading(true);
+    try {
+      const stats = sectorAnalytics.slice(0, 8).map(s => ({
+        sector: s.sector,
+        totalTurnoverBdt: s.current5dTurnoverCrores * 10,
+        marketSharePct: s.marketMoneyFlowSharePct,
+        avgChangePct: s.topMoverGainPct,
+        momentumScore: Math.round(s.moneyFlowExpansionRatio * 50)
+      }));
+      const res = await fetch('/api/gemini/sector-narrative', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectorStats: stats })
+      });
+      const data = await res.json();
+      setAiSectorData(data);
+    } catch (err) {
+      console.error('Sector narrative error:', err);
+    } finally {
+      setAiSectorLoading(false);
+    }
+  };
 
   // Compute detailed sector analytics & money flow dynamics
   const sectorAnalytics = useMemo(() => {
@@ -72,7 +107,8 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
 
     if (sortedMarketDates.length === 0) return [];
 
-    // Latest 5 and 20 market trading dates
+    // Latest 3, 5 and 20 market trading dates
+    const recent3Dates = new Set(sortedMarketDates.slice(-3));
     const recent5Dates = new Set(sortedMarketDates.slice(-5));
     const past20Dates = new Set(sortedMarketDates.slice(-20));
 
@@ -80,6 +116,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       string,
       {
         stockCount: number;
+        recent3dTurnoverBdt: number;
         recent5dTurnoverBdt: number;
         past20dTurnoverBdt: number;
         totalMarketCapBdt: number;
@@ -97,6 +134,18 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       const len = s.candles.length;
       const candleDateMap = new Map<string, { close: number; volume: number }>();
       s.candles.forEach((c) => candleDateMap.set(c.date, c));
+
+      // Calculate turnover over the global recent 3 market dates
+      let total3dVolBdt = 0;
+      let daysFound3d = 0;
+      recent3Dates.forEach((d) => {
+        const c = candleDateMap.get(d);
+        if (c) {
+          total3dVolBdt += c.close * c.volume;
+          daysFound3d++;
+        }
+      });
+      const avg3dDailyBdt = total3dVolBdt / Math.max(1, daysFound3d || recent3Dates.size);
 
       // Calculate turnover over the global recent 5 market dates
       let total5dVolBdt = 0;
@@ -136,6 +185,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       if (!sectorMap.has(s.sector)) {
         sectorMap.set(s.sector, {
           stockCount: 0,
+          recent3dTurnoverBdt: 0,
           recent5dTurnoverBdt: 0,
           past20dTurnoverBdt: 0,
           totalMarketCapBdt: 0,
@@ -146,6 +196,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
 
       const secData = sectorMap.get(s.sector)!;
       secData.stockCount += 1;
+      secData.recent3dTurnoverBdt += avg3dDailyBdt;
       secData.recent5dTurnoverBdt += avg5dDailyBdt;
       secData.past20dTurnoverBdt += avg20dDailyBdt;
       secData.totalMarketCapBdt += estCapBdt;
@@ -161,6 +212,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
     sectorMap.forEach((data, sector) => {
       // 1 BDT Crore = 10,000,000 BDT
       const current5dTurnoverCrores = data.recent5dTurnoverBdt / 10000000;
+      const current3dTurnoverCrores = data.recent3dTurnoverBdt / 10000000;
       const baseline20dTurnoverCrores = data.past20dTurnoverBdt / 10000000;
 
       // Minimum baseline floor of 0.2 Crore (20 Lakh BDT) to prevent division-by-near-zero spikes
@@ -176,6 +228,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
 
       const estimatedMarketCapCrores = data.totalMarketCapBdt / 10000000;
 
+      const velocity3dPct = estimatedMarketCapCrores > 0 ? (current3dTurnoverCrores / estimatedMarketCapCrores) * 100 : 0;
       const turnoverVelocityPct =
         estimatedMarketCapCrores > 0
           ? (current5dTurnoverCrores / estimatedMarketCapCrores) * 100
@@ -204,6 +257,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
         marketMoneyFlowSharePct,
         estimatedMarketCapCrores,
         turnoverVelocityPct,
+        velocity3dPct,
         status,
         topMoverSymbol: data.topMoverSymbol,
         topMoverGainPct: data.topMoverGainPct,
@@ -243,7 +297,16 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleGenerateSectorNarrative}
+            disabled={aiSectorLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-mono font-bold transition-all shadow-md border border-purple-400 disabled:opacity-50 cursor-pointer"
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-purple-200 ${aiSectorLoading ? 'animate-spin' : ''}`} />
+            <span>{aiSectorLoading ? 'Analyzing Rotation...' : '🤖 AI Sector Narrative'}</span>
+          </button>
+
           <button
             onClick={() => setShowExplanationModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-mono font-semibold transition-all border border-slate-700"
@@ -260,6 +323,37 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
           </button>
         </div>
       </div>
+
+      {aiSectorData && (
+        <div className="bg-gradient-to-r from-indigo-950/40 via-slate-950 to-purple-950/40 border border-purple-500/30 rounded-2xl p-4 space-y-3 font-mono text-xs">
+          <div className="flex items-center gap-2 text-purple-300 font-bold">
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            <span>{aiSectorData.narrativeTitle || 'DSE Macro Sector Rotation Narrative'}</span>
+          </div>
+          <p className="text-slate-300 leading-relaxed bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+            {aiSectorData.capitalRotationSummary}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-emerald-500/20 space-y-1">
+              <div className="text-[10px] font-bold text-emerald-400 uppercase">Dominant Capital Inflow Sectors</div>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
+                {aiSectorData.dominantSectors?.map((s, idx) => (
+                  <li key={idx}>{s}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-amber-500/20 space-y-1">
+              <div className="text-[10px] font-bold text-amber-400 uppercase">Lagging Sectors & Breadth Warning</div>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
+                {aiSectorData.laggingSectors?.map((s, idx) => (
+                  <li key={idx}>{s}</li>
+                ))}
+              </ul>
+              <p className="text-rose-400 text-[10px] pt-1">{aiSectorData.marketBreadthWarning}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -367,22 +461,27 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
                   </div>
 
                   {/* Metrics Grid */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-900/80 p-2 rounded-lg text-xs font-mono">
+                  <div className="grid grid-cols-4 gap-2 bg-slate-900/80 p-2 rounded-lg text-xs font-mono">
                     <div>
                       <span className="text-[9px] text-slate-400 block">5d Turnover</span>
-                      <span className="font-extrabold text-white text-xs">৳{sec.current5dTurnoverCrores.toFixed(1)} Cr</span>
+                      <span className="font-extrabold text-white text-[11px]">৳{sec.current5dTurnoverCrores.toFixed(1)} Cr</span>
                     </div>
 
                     <div>
                       <span className="text-[9px] text-slate-400 block">Flow Surge</span>
-                      <span className={`font-extrabold text-xs ${sec.moneyFlowExpansionRatio >= 1.8 ? 'text-emerald-400' : sec.moneyFlowExpansionRatio >= 1.25 ? 'text-indigo-300' : 'text-slate-300'}`}>
+                      <span className={`font-extrabold text-[11px] ${sec.moneyFlowExpansionRatio >= 1.8 ? 'text-emerald-400' : sec.moneyFlowExpansionRatio >= 1.25 ? 'text-indigo-300' : 'text-slate-300'}`}>
                         {sec.moneyFlowExpansionRatio.toFixed(2)}x
                       </span>
                     </div>
 
                     <div>
                       <span className="text-[9px] text-slate-400 block">Market Share</span>
-                      <span className="font-extrabold text-amber-300 text-xs">{sec.marketMoneyFlowSharePct.toFixed(1)}%</span>
+                      <span className="font-extrabold text-amber-300 text-[11px]">{sec.marketMoneyFlowSharePct.toFixed(1)}%</span>
+                    </div>
+
+                    <div>
+                      <span className="text-[9px] text-slate-400 block" title="3-Day Velocity (Turnover / Market Cap)">3d Velocity</span>
+                      <span className="font-extrabold text-blue-300 text-[11px]">{sec.velocity3dPct.toFixed(2)}%</span>
                     </div>
                   </div>
 

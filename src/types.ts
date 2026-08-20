@@ -208,6 +208,7 @@ export interface SectorMoneyFlowStat {
   momentumPct: number; // % change in aggregate BDT turnover, recent 5d vs prior 5d
   currentVol: number;
   pastVol: number;
+  velocity3dPct?: number; // % change in 3d rolling volume vs previous 3d rolling
 }
 
 export interface DseCircuitInfo {
@@ -219,6 +220,8 @@ export interface DseCircuitInfo {
   isNearLowerCircuit: boolean;
   isAtLowerCircuit: boolean;
   changeFromPrevClosePct: number;
+  circuitLockStreak: number;
+  isZeroSellerCircuit: boolean;
 }
 
 export type DseCategory = 'A' | 'B' | 'N' | 'Z';
@@ -230,6 +233,13 @@ export interface DseMarketProfile {
   floatProfile: 'Institutional Grade' | 'Mid Float' | 'Low Float Speculative';
   manipulationRiskScore: number; // 0 - 100
   circuitInfo: DseCircuitInfo;
+  paidUpCapitalCrores?: number;
+  freeFloatPct?: number;
+  itemStockRisk?: 'HIGH' | 'MEDIUM' | 'LOW';
+  dividendYield?: number;
+  upcomingRecordDate?: string;
+  sponsorHoldingsPct?: number;
+  recentDirectorDeclarations?: Array<{ type: 'BUY' | 'SELL'; quantity: number; date: string }>;
 }
 
 export interface RealisticTradeTarget {
@@ -323,6 +333,9 @@ export interface ScreenerStockCandidate {
   sectorMomentumPct?: number;
   tradePlan?: RealisticTradePlan;
   volumeFootprint?: VolumeFootprintMetrics;
+  isFloorUnlock?: boolean;
+  hiddenAccumulation?: boolean;
+  directorBuying?: boolean;
 }
 
 export type VolumePatternFootprintType =
@@ -358,3 +371,20 @@ export interface VolumeFootprintMetrics {
   turnoverSurgeMultiplier: number;
 }
 
+
+export interface TradeLog {
+  id: string;
+  userId: string;
+  symbol: string;
+  entryDate: string;
+  entryPrice: number;
+  exitDate?: string;
+  exitPrice?: number;
+  shares: number;
+  status: 'OPEN' | 'CLOSED';
+  pnlBdt?: number;
+  pnlPct?: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
