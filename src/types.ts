@@ -131,6 +131,7 @@ export interface BreakoutSignal {
   avgVolume20: number;
   priceIncreasePct: number;
   volumeMultiplier: number;
+  earlyWarnings?: string[];
   microPattern: 'VCP Compression' | 'Narrow Range (NR7)' | 'Dry-up Spike' | 'Resistance Retest';
   macroPattern: 'Cup & Handle' | 'Ascending Triangle' | 'Multi-Week Box' | '50/200 EMA Golden Cross' | 'Harmonic XABCD Pattern';
   detectedPattern: TechnicalPatternType;
@@ -209,6 +210,10 @@ export interface SectorMoneyFlowStat {
   currentVol: number;
   pastVol: number;
   velocity3dPct?: number; // % change in 3d rolling volume vs previous 3d rolling
+  expansionRatio?: number; // Relative turnover expansion ratio (5d avg / 20d baseline)
+  marketSharePct?: number; // % of total market turnover (5d)
+  marketShareDelta?: number; // Shift in market share (% points) vs 20d baseline
+  status?: 'REPEATING_BREAKOUT' | 'ACCUMULATING' | 'CONSOLIDATING' | 'OUTFLOW';
 }
 
 export interface DseCircuitInfo {
@@ -297,6 +302,7 @@ export interface ScreenerStockCandidate {
   stockName: string;
   sector: string;
   stock: DseStockData;
+  earlyWarnings?: string[];
   decisionStatus: ScreenerDecisionStatus;
   profitPotentialScore: number;
   latestClose: number;
@@ -313,6 +319,7 @@ export interface ScreenerStockCandidate {
   potentialRiskPct: number;
   keyCatalysts: string[];
   breakoutPattern: string;
+  daysSinceLastBreakout?: number;
   detectedPattern: TechnicalPatternType;
   patternConfidence: number;
   patternDescription: string;

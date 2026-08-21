@@ -34,6 +34,7 @@ import {
   VolumeFootprintMetrics,
   VolumePatternFootprintType
 } from '../types';
+import { applySectorOverrides } from './sectorMapping';
 
 // Realistic Sample Datasets for Dhaka Stock Exchange (DSE) Companies
 export const DSE_SAMPLE_STOCKS: DseStockData[] = [
@@ -166,7 +167,7 @@ export const DSE_SAMPLE_STOCKS: DseStockData[] = [
   {
     symbol: 'EIL',
     name: 'Express Insurance Limited',
-    sector: 'Insurance',
+    sector: 'Insurance General',
     yoyGrowthPct: 4.5,
     peRatio: 14.2,
     avgTurnoverBdtMillion: 35.8,
@@ -983,9 +984,31 @@ export function runDseVolumeBreakoutBacktest(
       if (isUpthrust) warningFlags.push("Shooting Star / Upthrust");
       if (distDays >= 2) warningFlags.push(`Heavy Distribution (${distDays} days)`);
 
-      const isVolumeSurge = volumeRatio >= config.volumeSurgeMultiplier && current.close > current.open;
+      const dailyRange = current.high - current.low || 1;
+      const closePosition = (current.close - current.low) / dailyRange;
+      const isStrongClose = closePosition >= 0.4; // Relaxed to 40% to prevent filtering early accumulation wicks
+
+      const earlyWarnings: string[] = [];
+      const sma20 = past20.length > 0 ? past20.reduce((acc, c) => acc + c.close, 0) / past20.length : current.close;
+      if (volumeRatio > 1.5 && (dailyRange / current.close) < 0.015) earlyWarnings.push("Volume Churning (High Vol, Low Progress)");
+      if ((current.close - sma20) / sma20 > 0.12) earlyWarnings.push("Extended from 20d MA (>12%)");
+      if (sma200 && current.close < sma200 && (sma200 - current.close) / sma200 < 0.05) earlyWarnings.push("Approaching Overhead 200d MA Supply");
+      
+      let consecutiveRed = 0;
+      let redDropPct = 0;
+      for (let j = i - 1; j >= Math.max(0, i - 4); j--) {
+        if (candles[j].close < candles[j].open) {
+          consecutiveRed++;
+          redDropPct += (candles[j].open - candles[j].close) / candles[j].open;
+        } else break;
+      }
+      if (consecutiveRed >= 3 && redDropPct > 0.05) earlyWarnings.push(`V-Shape Reversal (${consecutiveRed} Red Days, -${(redDropPct*100).toFixed(1)}% Drop)`);
+
+      const isVolumeSurge = volumeRatio >= config.volumeSurgeMultiplier && current.close > current.open && isStrongClose;
+      // High Momentum Reversal catches Stage 1 base breakouts before 50d crosses 200d
+      const isHighMomentumReversal = current.close > sma50 && isPocketPivot && isVolumeSurge;
       // VCP Dry-up is an excellent bonus, but shouldn't strictly block all breakouts if volume is surging out of a base.
-      const isInstitutionalBreakout = isStage2Uptrend && isVolumeSurge && (isBreakingResistance || isPocketPivot);
+      const isInstitutionalBreakout = (isStage2Uptrend || isHighMomentumReversal) && isVolumeSurge && (isBreakingResistance || isPocketPivot);
 
       // 2. Volume & Price Breakout Condition
       if (isInstitutionalBreakout) {
@@ -1083,6 +1106,7 @@ export function runDseVolumeBreakoutBacktest(
           avgVolume20: Math.round(avgVol20),
           priceIncreasePct,
           volumeMultiplier: Number(volumeRatio.toFixed(2)),
+          earlyWarnings,
           microPattern,
           macroPattern: harmonic ? 'Harmonic XABCD Pattern' : macroPattern,
           detectedPattern: techPattern.detectedPattern,
@@ -1369,16 +1393,19 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   JUTESPINN: 'Jute',
 
   // Pharmaceuticals & Chemicals
-  BEXIMCO: 'Pharmaceuticals & Chemicals',
   SQURPHARMA: 'Pharmaceuticals & Chemicals',
+  SQUAREPHAR: 'Pharmaceuticals & Chemicals',
   RENATA: 'Pharmaceuticals & Chemicals',
   BXPHARMA: 'Pharmaceuticals & Chemicals',
   ACI: 'Pharmaceuticals & Chemicals',
+  ACIFORMULA: 'Pharmaceuticals & Chemicals',
   MARICO: 'Pharmaceuticals & Chemicals',
   UNILEVERCL: 'Pharmaceuticals & Chemicals',
   BEACONPHAR: 'Pharmaceuticals & Chemicals',
+  BEACON: 'Pharmaceuticals & Chemicals',
   IBNSINA: 'Pharmaceuticals & Chemicals',
   ORIONPHARM: 'Pharmaceuticals & Chemicals',
+  ORIONINFU: 'Pharmaceuticals & Chemicals',
   ACMELAB: 'Pharmaceuticals & Chemicals',
   SILCOPHARM: 'Pharmaceuticals & Chemicals',
   ADVENT: 'Pharmaceuticals & Chemicals',
@@ -1394,16 +1421,20 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   ACTIVEFINE: 'Pharmaceuticals & Chemicals',
   AFCAGRO: 'Pharmaceuticals & Chemicals',
   AMBEEPHA: 'Pharmaceuticals & Chemicals',
-  ACIFORMULA: 'Pharmaceuticals & Chemicals',
-  ORIONINFU: 'Pharmaceuticals & Chemicals',
   WATACHEM: 'Pharmaceuticals & Chemicals',
+  GLAXOSMITH: 'Pharmaceuticals & Chemicals',
+  RECKITTBEN: 'Pharmaceuticals & Chemicals',
+  LIBRAINFU: 'Pharmaceuticals & Chemicals',
+  IBP: 'Pharmaceuticals & Chemicals',
 
   // Banks
   BRACBANK: 'Bank',
   CITYBANK: 'Bank',
   EBL: 'Bank',
+  EASTERNBNK: 'Bank',
   EBLNRB: 'Bank',
   ISLAMIBANK: 'Bank',
+  IBBL: 'Bank',
   PUBALIBANK: 'Bank',
   DUTCHBANGL: 'Bank',
   NBL: 'Bank',
@@ -1412,30 +1443,37 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   ALARABANK: 'Bank',
   PRIMEBANK: 'Bank',
   UCB: 'Bank',
+  UCBNK: 'Bank',
   IFIC: 'Bank',
   JAMUNABANK: 'Bank',
   MUTUALBANK: 'Bank',
   NCCBANK: 'Bank',
   SHAHJABANK: 'Bank',
+  SJIBL: 'Bank',
   SOUTHWEST: 'Bank',
   STANDARD: 'Bank',
+  STANDBANKL: 'Bank',
   TRUSTBANK: 'Bank',
   PREMIERBAN: 'Bank',
   FIRSTSBANK: 'Bank',
+  FSIBL: 'Bank',
   ICBIBANK: 'Bank',
   ABBANK: 'Bank',
   GLOBALBANK: 'Bank',
+  GIB: 'Bank',
   MIDLANDBNK: 'Bank',
   NRBBANK: 'Bank',
+  NRBCBANK: 'Bank',
   SIBL: 'Bank',
   UNIONBANK: 'Bank',
   SBACBANK: 'Bank',
   BANKASIA: 'Bank',
   RUPALIBANK: 'Bank',
   MERCANBANK: 'Bank',
+  MBL: 'Bank',
   SOUTHEASTB: 'Bank',
 
-  // Financial Institution
+  // Financial Institution (NBFI)
   IDLC: 'Financial Institution',
   LANKABAFIN: 'Financial Institution',
   IPDC: 'Financial Institution',
@@ -1458,11 +1496,14 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   PLFSL: 'Financial Institution',
   PRIMEFIN: 'Financial Institution',
   UNIONFIN: 'Financial Institution',
+  UNITEDFIN: 'Financial Institution',
+  ICB: 'Financial Institution',
 
   // Engineering
   BSRMSTEEL: 'Engineering',
   GPHISPAT: 'Engineering',
   WALTONHIL: 'Engineering',
+  WALTONBD: 'Engineering',
   SINGERBD: 'Engineering',
   NAHEEACP: 'Engineering',
   KDSALTD: 'Engineering',
@@ -1471,13 +1512,10 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   AFTABAUTO: 'Engineering',
   RUNNERAUTO: 'Engineering',
   BDLAMPS: 'Engineering',
-  OLYMPICEX: 'Engineering',
-  APEXADELFT: 'Engineering',
   COPPERTECH: 'Engineering',
   DOMINAGE: 'Engineering',
   GOLDENSON: 'Engineering',
   IFADAUTOS: 'Engineering',
-  MALEKSPIN: 'Engineering',
   BDAUTOS: 'Engineering',
   OIMEX: 'Engineering',
   RSRMSTEEL: 'Engineering',
@@ -1486,6 +1524,17 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   ANWARGALV: 'Engineering',
   BENGALWTL: 'Engineering',
   DSHALUM: 'Engineering',
+  DESHBANDHU: 'Engineering',
+  DESHBANDH: 'Engineering',
+  MONNOAGML: 'Engineering',
+  MONNOAGRO: 'Engineering',
+  NAVANACNG: 'Engineering',
+  NATIONALPOL: 'Engineering',
+  NAVIPOLY: 'Engineering',
+  NTLTUBE: 'Engineering',
+  ARAMIT: 'Engineering',
+  ECABLES: 'Engineering',
+  EASTERNCBL: 'Engineering',
 
   // Food & Allied
   BATBC: 'Food & Allied',
@@ -1495,25 +1544,33 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   GEMINISEA: 'Food & Allied',
   LOVELLO: 'Food & Allied',
   EMERALDOIL: 'Food & Allied',
+  EMERALD: 'Food & Allied',
   FINEFOODS: 'Food & Allied',
   MEGHNABAN: 'Food & Allied',
+  MEGCONMILK: 'Food & Allied',
+  MEGHNAPET: 'Food & Allied',
   AMCLPRAN: 'Food & Allied',
+  FUWANGFOOD: 'Food & Allied',
   FUWANGAO: 'Food & Allied',
   BEACHHATCH: 'Food & Allied',
   RAHIMAFOOD: 'Food & Allied',
   ZEALBANGLA: 'Food & Allied',
+  SHYAMPSUG: 'Food & Allied',
+  NATFEED: 'Food & Allied',
 
   // IT Sector
   ADNTEL: 'IT Sector',
   GENEXIL: 'IT Sector',
-  AAMRAFIN: 'IT Sector',
+  AAMRANET: 'IT Sector',
   AAMRATECH: 'IT Sector',
   BDCOM: 'IT Sector',
-  ITTEFAQ: 'IT Sector',
   INTECH: 'IT Sector',
+  AGNI: 'IT Sector',
   AGNISYSTEM: 'IT Sector',
   INFOSYS: 'IT Sector',
+  EGEN: 'IT Sector',
   EGENERATN: 'IT Sector',
+  DAFODILCOM: 'IT Sector',
 
   // Telecommunication
   GP: 'Telecommunication',
@@ -1524,6 +1581,7 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   ALLTEX: 'Textile',
   ENVOYTEX: 'Textile',
   SQUARETEXT: 'Textile',
+  SQUARETEX: 'Textile',
   TOSRIFA: 'Textile',
   ARGONDENIM: 'Textile',
   SHASHADENIM: 'Textile',
@@ -1535,6 +1593,7 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   METROSPIN: 'Textile',
   PACIFICDEN: 'Textile',
   BEXIMCOTXT: 'Textile',
+  BXPYSYN: 'Textile',
   ALHAJTEX: 'Textile',
   APEXSPINN: 'Textile',
   KATTALI: 'Textile',
@@ -1546,6 +1605,26 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   SAIHAMTEX: 'Textile',
   SHEPHERD: 'Textile',
   TALLUSPIN: 'Textile',
+  MALEKSPIN: 'Textile',
+  MONNOFABR: 'Textile',
+  MONNOFAB: 'Textile',
+  MONNOSTAF: 'Textile',
+  PRIMETEX: 'Textile',
+  DESHGARM: 'Textile',
+  PARAMOUNT: 'Textile',
+  PARAMOUNTT: 'Textile',
+  PTL: 'Textile',
+  OLYMPICEX: 'Textile',
+  MLSPECTRA: 'Textile',
+  DULAMIACOT: 'Textile',
+  FAMILYTEX: 'Textile',
+  MITHUNKNIT: 'Textile',
+  VFSTDL: 'Textile',
+  HWAWELL: 'Textile',
+  ESQUIRE: 'Textile',
+  EVINCE: 'Textile',
+  MAKSONSPIN: 'Textile',
+  SAFKOSPINN: 'Textile',
 
   // Fuel & Power
   MPETROLEUM: 'Fuel & Power',
@@ -1564,8 +1643,9 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   GBBPOWER: 'Fuel & Power',
   INTRACO: 'Fuel & Power',
   LINDEBD: 'Fuel & Power',
+  EASTLUB: 'Fuel & Power',
 
-  // Insurance
+  // Insurance General
   GREENDELT: 'Insurance General',
   PHOENIXINS: 'Insurance General',
   EASTLAND: 'Insurance General',
@@ -1574,28 +1654,29 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   MEGHNAINS: 'Insurance General',
   TAKAFULINS: 'Insurance General',
   PURABIINS: 'Insurance General',
-  DELTALIFE: 'Insurance Life',
-  MEGHNALIFE: 'Insurance Life',
   CENTRALINS: 'Insurance General',
   CONTININS: 'Insurance General',
   PARAMOUT: 'Insurance General',
+  PARAMOUNTINS: 'Insurance General',
   RELIANCINS: 'Insurance General',
   ASIAINS: 'Insurance General',
   BGIC: 'Insurance General',
   CITYINS: 'Insurance General',
+  CITYGENINS: 'Insurance General',
   PRAGATIINS: 'Insurance General',
   PRIMEINS: 'Insurance General',
+  PRIMEISLAMI: 'Insurance General',
   PROVATIINS: 'Insurance General',
   REPUBLICA: 'Insurance General',
   NITOLINS: 'Insurance General',
   SONARBAINS: 'Insurance General',
   STANDARDIN: 'Insurance General',
-  SUNLIFEINS: 'Insurance Life',
-  UNIQUEHRL: 'Travel & Leisure',
+  STANDARINS: 'Insurance General',
   AGRANIINS: 'Insurance General',
   ASIAPACINS: 'Insurance General',
   CRYSTALINS: 'Insurance General',
   DHAKAAINS: 'Insurance General',
+  DHAKAINS: 'Insurance General',
   EXIMINS: 'Insurance General',
   FAREASTINS: 'Insurance General',
   FEDERALINS: 'Insurance General',
@@ -1604,66 +1685,138 @@ export const DSE_SECTOR_MAP: Record<string, string> = {
   JANATAINS: 'Insurance General',
   KARNAPHULI: 'Insurance General',
   MERCANINS: 'Insurance General',
-  NATLIFEINS: 'Insurance Life',
+  MERCINS: 'Insurance General',
   PEOPLESINS: 'Insurance General',
-  POPULARLIF: 'Insurance Life',
   PROGRESSIVE: 'Insurance General',
   RUPALIINS: 'Insurance General',
-  SANDHANI: 'Insurance Life',
   SENAKALYAN: 'Insurance General',
-  SONARLIFE: 'Insurance Life',
   UNIONINS: 'Insurance General',
+  BDGENERAL: 'Insurance General',
+  NORTHRNINS: 'Insurance General',
+  PIONEERINS: 'Insurance General',
+  UNITEDINS: 'Insurance General',
+  EIL: 'Insurance General',
+
+  // Insurance Life
+  DELTALIFE: 'Insurance Life',
+  MEGHNALIFE: 'Insurance Life',
+  NATLIFEINS: 'Insurance Life',
+  POPULARLIF: 'Insurance Life',
+  SANDHANI: 'Insurance Life',
+  SANDHANINS: 'Insurance Life',
+  SONARLIFE: 'Insurance Life',
+  SONALILIFE: 'Insurance Life',
+  SUNLIFEINS: 'Insurance Life',
+  PRIMELIFE: 'Insurance Life',
+  PADMALIFE: 'Insurance Life',
+  FAREASTLIF: 'Insurance Life',
+  RUPALILIFE: 'Insurance Life',
+  PRAGATILIF: 'Insurance Life',
+  TRUSTLIFE: 'Insurance Life',
+  CHARTERED: 'Insurance Life',
+  JIVANBIMA: 'Insurance Life',
 
   // Cement
   LHBL: 'Cement',
   HEIDELBCEM: 'Cement',
   CROWNSEMT: 'Cement',
+  CROWNCEM: 'Cement',
   MISEMENT: 'Cement',
   CONFIDCEM: 'Cement',
   ARAMITCEM: 'Cement',
   MEGHNACEM: 'Cement',
+  PREMIERCEM: 'Cement',
 
   // Ceramic Sector
   FUWANGCER: 'Ceramic Sector',
   RAKCERAMIC: 'Ceramic Sector',
   SHINPATO: 'Ceramic Sector',
+  SHINECPA: 'Ceramic Sector',
   MONNOCERA: 'Ceramic Sector',
+  STANCERAM: 'Ceramic Sector',
 
   // Tannery Industries
   APEXTANRY: 'Tannery Industries',
+  APEXFOOT: 'Tannery Industries',
+  APEXADELFT: 'Tannery Industries',
   BATASHOE: 'Tannery Industries',
   FORTUNE: 'Tannery Industries',
   SAMATA: 'Tannery Industries',
   LEGACYFOOT: 'Tannery Industries',
+  ARAMITFOOT: 'Tannery Industries',
 
   // Paper & Printing
   HAKKANIPUL: 'Paper & Printing',
   BPPAPER: 'Paper & Printing',
   SONALIPAPR: 'Paper & Printing',
   PAPERPROC: 'Paper & Printing',
+  KPP: 'Paper & Printing',
 
   // Travel & Leisure
+  UNIQUEHRL: 'Travel & Leisure',
   PENINSULA: 'Travel & Leisure',
   SEAPEARL: 'Travel & Leisure',
+  UNITEDAIR: 'Travel & Leisure',
 
   // Services & Real Estate
   EHL: 'Services & Real Estate',
   SAMORITA: 'Services & Real Estate',
   SAIFPOWER: 'Services & Real Estate',
 
+  // Miscellaneous
+  BEXIMCO: 'Miscellaneous',
+  MIRAKHTER: 'Miscellaneous',
+  BERGERPBL: 'Miscellaneous',
+  BSC: 'Miscellaneous',
+  SINOBANGLA: 'Miscellaneous',
+  IMAMBUTTON: 'Miscellaneous',
+
+  // Corporate Bond
+  BEXGSUKUK: 'Corporate Bond',
+
   // Mutual Funds
   '1JANATAMF': 'Mutual Funds',
   '1STPRIMFMF': 'Mutual Funds',
-  AIBL1STIMF: 'Mutual Funds',
-  GRAMEEN2: 'Mutual Funds',
-  EBL1STMF: 'Mutual Funds',
-  IFIC1STMF: 'Mutual Funds',
-  MBL1STMF: 'Mutual Funds',
-  NCCBLMF1: 'Mutual Funds',
-  PHPMF1: 'Mutual Funds',
-  POPULAR1MF: 'Mutual Funds',
-  SEMIBLLEST: 'Mutual Funds',
-  TRUSTB1ST: 'Mutual Funds',
+  '1STPRIMFMA': 'Mutual Funds',
+  'AIBL1STIMF': 'Mutual Funds',
+  'ATCSLGF': 'Mutual Funds',
+  'CAPMBDWSMF': 'Mutual Funds',
+  'CAPMIBBAMF': 'Mutual Funds',
+  'DBH1STMF': 'Mutual Funds',
+  'EBL1STMF': 'Mutual Funds',
+  'EBLNRBMF': 'Mutual Funds',
+  'EXIM1STMF': 'Mutual Funds',
+  'FBFIF': 'Mutual Funds',
+  'GRAMEEN2': 'Mutual Funds',
+  'GRAMEENS2': 'Mutual Funds',
+  'GREENDELMF': 'Mutual Funds',
+  'ICB3RDNRB': 'Mutual Funds',
+  'ICBAGRANI1': 'Mutual Funds',
+  'ICBAMCL24': 'Mutual Funds',
+  'ICBAMCL2ND': 'Mutual Funds',
+  'ICBEPMF1S1': 'Mutual Funds',
+  'ICBSONALI1': 'Mutual Funds',
+  'IFIC1STMF': 'Mutual Funds',
+  'IFILISLMF1': 'Mutual Funds',
+  'LRGLOBMF1': 'Mutual Funds',
+  'MBL1STMF': 'Mutual Funds',
+  'NCCBLMF1': 'Mutual Funds',
+  'NCCBLMUTUALFUND': 'Mutual Funds',
+  'NLI1STMF': 'Mutual Funds',
+  'PF1STMF': 'Mutual Funds',
+  'PHPMF1': 'Mutual Funds',
+  'POPULAR1MF': 'Mutual Funds',
+  'PRIME1ICBA': 'Mutual Funds',
+  'RELIANCE1': 'Mutual Funds',
+  'SEBL1STMF': 'Mutual Funds',
+  'SEMIBLLEST': 'Mutual Funds',
+  'SEMLFBSLGF': 'Mutual Funds',
+  'SEMLIBBLSF': 'Mutual Funds',
+  'SEMLLECMF': 'Mutual Funds',
+  'TRUSTB1MF': 'Mutual Funds',
+  'TRUSTB1ST': 'Mutual Funds',
+  'VAMLBDMF1': 'Mutual Funds',
+  'VAMLRBBF': 'Mutual Funds',
 };
 
 const INVALID_SECTOR_KEYWORDS = [
@@ -1730,10 +1883,103 @@ export function inferDseSector(symbol: string, rawSector?: string, rawName?: str
     return DSE_SECTOR_MAP[cleanSym];
   }
 
-  // 2. Pattern & Name Heuristics
+  // 2. Disambiguate Similar Name Families First (Prevents cross-sector collisions)
   const target = `${cleanSym} ${(rawName || '').toUpperCase()}`;
 
-  if (/MUTUAL|FUND|\bMF\b|MF1|GRAMEEN2|GRAMEENS2|EBL1ST|IFIC1ST|NCCBL|1STPR|POPULAR1MF|SEBL|ICBAMCL|ICBEP|ICBSONALI|ICB3RD|PF1ST|PRIME1|IFILISL|AIBL1ST|CAPM|FBFIF|ICBAGRANI|LRGLOB|MBL1ST|NLI1ST|PHPMF|RELIANCE1|SEML|TRUSTB1|VAML|ATCSLGF|DBH1ST|EBLNRB|EXIM1ST|GREENDEL/i.test(target)) return 'Mutual Funds';
+  // Mutual funds check first
+  if (/MUTUAL|FUND|\bMF\b|MF1|GRAMEEN2|GRAMEENS2|EBL1ST|IFIC1ST|NCCBL|1STPR|POPULAR1MF|SEBL|ICBAMCL|ICBEP|ICBSONALI|ICB3RD|PF1ST|PRIME1|IFILISL|AIBL1ST|CAPM|FBFIF|ICBAGRANI|LRGLOB|MBL1ST|NLI1ST|PHPMF|RELIANCE1|SEML|TRUSTB1|VAML|ATCSLGF|DBH1ST|EBLNRB|EXIM1ST|GREENDEL/i.test(target)) {
+    return 'Mutual Funds';
+  }
+
+  // APEX Family
+  if (cleanSym.startsWith('APEX') || target.includes('APEX')) {
+    if (/FOOD/i.test(target)) return 'Food & Allied';
+    if (/SPIN|TEX|KNIT/i.test(target)) return 'Textile';
+    if (/TAN|FOOT|SHOE|ADEL/i.test(target)) return 'Tannery Industries';
+  }
+
+  // MONNO Family
+  if (cleanSym.startsWith('MONNO') || target.includes('MONNO')) {
+    if (/CERA|CERAMIC/i.test(target)) return 'Ceramic Sector';
+    if (/FAB|TEXT|STAF/i.test(target)) return 'Textile';
+    if (/AGRO|MACH|AGML/i.test(target)) return 'Engineering';
+  }
+
+  // FU-WANG Family
+  if (cleanSym.startsWith('FUWANG') || target.includes('FU-WANG') || target.includes('FUWANG')) {
+    if (/CER/i.test(target)) return 'Ceramic Sector';
+    if (/FOOD|AO/i.test(target)) return 'Food & Allied';
+  }
+
+  // SQUARE Family
+  if (cleanSym.startsWith('SQUR') || cleanSym.startsWith('SQUARE') || target.includes('SQUARE')) {
+    if (/PHARM/i.test(target)) return 'Pharmaceuticals & Chemicals';
+    if (/TEXT|TEX|YARN/i.test(target)) return 'Textile';
+  }
+
+  // BEXIMCO Family
+  if (cleanSym.startsWith('BEX') || cleanSym.startsWith('BX') || target.includes('BEXIMCO')) {
+    if (/PHARM/i.test(target) || cleanSym === 'BXPHARMA') return 'Pharmaceuticals & Chemicals';
+    if (/TEXT|SYNTH|TXT/i.test(target) || cleanSym === 'BEXIMCOTXT' || cleanSym === 'BXPYSYN') return 'Textile';
+    if (/SUKUK/i.test(target)) return 'Corporate Bond';
+    if (cleanSym === 'BEXIMCO') return 'Miscellaneous';
+  }
+
+  // PRIME Family
+  if (cleanSym.startsWith('PRIME') || target.includes('PRIME')) {
+    if (/BANK/i.test(target) && !/MF|ICBA/i.test(target)) return 'Bank';
+    if (/LIFE/i.test(target)) return 'Insurance Life';
+    if (/INS|ISLAMI/i.test(target)) return 'Insurance General';
+    if (/FIN/i.test(target)) return 'Financial Institution';
+    if (/TEX|SPIN/i.test(target)) return 'Textile';
+    if (/MF|ICBA/i.test(target)) return 'Mutual Funds';
+  }
+
+  // EASTERN / EBL Family
+  if (cleanSym.startsWith('EASTERN') || cleanSym.startsWith('EBL') || target.includes('EASTERN')) {
+    if (/INS/i.test(target)) return 'Insurance General';
+    if (/LUB/i.test(target)) return 'Fuel & Power';
+    if (/CABL|CABLE/i.test(target)) return 'Engineering';
+    if (/HOUS|EHL/i.test(target)) return 'Services & Real Estate';
+    if (/MF/i.test(target)) return 'Mutual Funds';
+    if (/BANK|BNK|EBL/i.test(target)) return 'Bank';
+  }
+
+  // MEGHNA Family
+  if (cleanSym.startsWith('MEGH') || cleanSym === 'MPETROLEUM' || target.includes('MEGHNA')) {
+    if (/LIFE/i.test(target)) return 'Insurance Life';
+    if (/INS/i.test(target)) return 'Insurance General';
+    if (/CEM/i.test(target)) return 'Cement';
+    if (/PETROLEUM/i.test(target) || cleanSym === 'MPETROLEUM') return 'Fuel & Power';
+    if (/COND|MILK|PET|BAN|FOOD/i.test(target)) return 'Food & Allied';
+  }
+
+  // SONALI Family
+  if (cleanSym.startsWith('SONALI') || cleanSym.startsWith('SONAR') || target.includes('SONALI')) {
+    if (/ANSH|JUTE/i.test(target)) return 'Jute';
+    if (/PAPR|PAPER/i.test(target)) return 'Paper & Printing';
+    if (/LIFE|INS/i.test(target)) return 'Insurance Life';
+    if (/MF|ICB/i.test(target)) return 'Mutual Funds';
+  }
+
+  // DESH Family
+  if (cleanSym.startsWith('DESH') || target.includes('DESH')) {
+    if (/BANDHU|POLY/i.test(target)) return 'Engineering';
+    if (/GARM|TEXT/i.test(target)) return 'Textile';
+  }
+
+  // PARAMOUNT Family
+  if (cleanSym.startsWith('PARAM') || target.includes('PARAMOUNT')) {
+    if (/INS/i.test(target)) return 'Insurance General';
+    return 'Textile';
+  }
+
+  // MALEK Family
+  if (cleanSym === 'MALEKSPIN' || target.includes('MALEK SPINNING')) {
+    return 'Textile';
+  }
+
+  // 3. General Pattern & Keyword Heuristics
   if (/BANK|BNK|ISLAMIBANK|DUTCHBANGL|PUBALIBANK|BRACBANK|PRIMEBANK|CITYBANK|DHAKABANK|EXIMBANK|JAMUNABANK|MIDLANDBNK|NCCBANK|NRBBANK|ONEBANK|SBACBANK|SHAHJABANK|SIBL|TRUSTBANK|UCB|UTTARABANK|MERCANBANK|SOUTHEASTB/i.test(target)) return 'Bank';
   if (/\bINS\b|INSUR|INSURANCE|GREENDELT|RELIANCINS|ASIAINS|BGIC|PRAGATIINS|PROVATIINS|REPUBLICA|NITOLINS|SONARBAINS|FAREASTINS|FEDERALINS|JANATAINS|KARNAPHULI|PEOPLESINS|RUPALIINS|SENAKALYAN|PRIMEINS|CENTRALINS|CONTININS|PARAMOUT|CITYINS|STANDARDIN|AGRANIINS|ASIAPACINS|CRYSTALINS|DHAKAAINS|EXIMINS|GLOBALINS|ISLAMIINS|MERCANINS|PROGRESSIVE|UNIONINS|EASTERNINS|EASTERNI|MEGHNAINS|TAKAFULINS/i.test(target)) return 'Insurance General';
   if (/LIFE|SANDHANI/i.test(target)) return 'Insurance Life';
@@ -2009,7 +2255,7 @@ export function parseCustomDseStockFiles(fileContent: string, fileName: string):
   } catch (err) {
     console.error('Error parsing custom DSE stock file:', err);
   }
-  return results;
+  return applySectorOverrides(results);
 }
 
 // Extract stock datasets from an array of uploaded ZIP/Folder files
@@ -2171,7 +2417,7 @@ export function mergeAndProcessStockDatasets(rawStocks: DseStockData[]): DseStoc
 
   const mergedList = Array.from(stockMap.values());
   const activeList = filterActiveStocks(mergedList);
-  return activeList;
+  return applySectorOverrides(activeList);
 }
 
 export function extractStockDataFromExtractedFiles(files: ExtractedFile[]): DseStockData[] {
@@ -2333,73 +2579,150 @@ export function detectEarlyTrendIgnition(candles: DseStockCandle[]): EarlyTrendA
 
 // High-Profit Decision-Making DSE Stock Screener Engine
 export function computeSectorMoneyFlow(stocks: DseStockData[]): Record<string, SectorMoneyFlowStat> {
-  const raw = new Map<string, { currentTurnover: number; pastTurnover: number; vol3d: number; pastVol3d: number }>();
+  const NON_EQUITY_SECTORS = new Set([
+    'MUTUAL FUNDS',
+    'MUTUAL FUND',
+    'CORPORATE BOND',
+    'TREASURY BOND',
+    'BONDS',
+    'DEBENTURES',
+    'GOVT TREASURY BOND'
+  ]);
 
-  // Determine the global max date to align all stocks calendar-wise
-  let globalMaxDateStr = '1970-01-01';
-  stocks.forEach(s => {
-    if (s.candles && s.candles.length > 0) {
-      const lastDate = s.candles[s.candles.length - 1].date;
-      if (lastDate > globalMaxDateStr) globalMaxDateStr = lastDate;
-    }
+  // 1. Gather all unique market trading dates across all valid stocks
+  const allDatesSet = new Set<string>();
+  stocks.forEach((s) => {
+    if (!s.sector || NON_EQUITY_SECTORS.has(s.sector.toUpperCase())) return;
+    (s.candles || []).forEach((c) => {
+      if (c && c.date) allDatesSet.add(c.date);
+    });
   });
 
-  const globalMaxDate = new Date(globalMaxDateStr);
-  
+  const sortedMarketDates = Array.from(allDatesSet).sort(
+    (a, b) => new Date(a).getTime() - new Date(b).getTime()
+  );
+
+  if (sortedMarketDates.length === 0) return {};
+
+  const recent3Dates = new Set(sortedMarketDates.slice(-3));
+  const recent5Dates = new Set(sortedMarketDates.slice(-5));
+  const prior5Dates = new Set(sortedMarketDates.slice(-10, -5));
+  const past20Dates = new Set(sortedMarketDates.slice(-20));
+
+  const sectorMap = new Map<
+    string,
+    {
+      recent3dTurnoverBdt: number;
+      recent5dTurnoverBdt: number;
+      prior5dTurnoverBdt: number;
+      past20dTurnoverBdt: number;
+    }
+  >();
+
+  let grandTotalRecent5dBdt = 0;
+  let grandTotalPast20dBdt = 0;
+
   stocks.forEach((s) => {
     if (!s.sector || !s.candles || s.candles.length === 0) return;
-    
-    let currentTurnover = 0;
-    let pastTurnover = 0;
-    let vol3d = 0;
-    let pastVol3d = 0;
+    if (NON_EQUITY_SECTORS.has(s.sector.toUpperCase())) return;
 
-    s.candles.forEach(c => {
-      const candleDate = new Date(c.date);
-      const diffTime = Math.abs(globalMaxDate.getTime() - candleDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      const turnover = (c.close * c.volume) / 1000000; // BDT Millions
+    const candleDateMap = new Map<string, { close: number; volume: number }>();
+    s.candles.forEach((c) => candleDateMap.set(c.date, c));
 
-      if (diffDays <= 7) {
-        // Last 7 calendar days (~5 trading days)
-        currentTurnover += turnover;
-      } else if (diffDays > 7 && diffDays <= 14) {
-        // Prior 7 calendar days
-        pastTurnover += turnover;
-      }
-
-      if (diffDays <= 4) {
-        // ~3 trading days
-        vol3d += turnover;
-      } else if (diffDays > 4 && diffDays <= 8) {
-        // prior 3 trading days
-        pastVol3d += turnover;
-      }
+    let stock3dVolBdt = 0;
+    recent3Dates.forEach((d) => {
+      const c = candleDateMap.get(d);
+      if (c) stock3dVolBdt += c.close * c.volume;
     });
 
-    if (!raw.has(s.sector)) raw.set(s.sector, { currentTurnover: 0, pastTurnover: 0, vol3d: 0, pastVol3d: 0 });
-    const cur = raw.get(s.sector);
-    if (cur) {
-      cur.currentTurnover += currentTurnover;
-      cur.pastTurnover += pastTurnover;
-      cur.vol3d += vol3d;
-      cur.pastVol3d += pastVol3d;
+    let stock5dVolBdt = 0;
+    recent5Dates.forEach((d) => {
+      const c = candleDateMap.get(d);
+      if (c) stock5dVolBdt += c.close * c.volume;
+    });
+
+    let stockPrior5dVolBdt = 0;
+    prior5Dates.forEach((d) => {
+      const c = candleDateMap.get(d);
+      if (c) stockPrior5dVolBdt += c.close * c.volume;
+    });
+
+    let stock20dVolBdt = 0;
+    past20Dates.forEach((d) => {
+      const c = candleDateMap.get(d);
+      if (c) stock20dVolBdt += c.close * c.volume;
+    });
+
+    grandTotalRecent5dBdt += stock5dVolBdt;
+    grandTotalPast20dBdt += stock20dVolBdt;
+
+    if (!sectorMap.has(s.sector)) {
+      sectorMap.set(s.sector, {
+        recent3dTurnoverBdt: 0,
+        recent5dTurnoverBdt: 0,
+        prior5dTurnoverBdt: 0,
+        past20dTurnoverBdt: 0,
+      });
     }
+
+    const sec = sectorMap.get(s.sector)!;
+    sec.recent3dTurnoverBdt += stock3dVolBdt;
+    sec.recent5dTurnoverBdt += stock5dVolBdt;
+    sec.prior5dTurnoverBdt += stockPrior5dVolBdt;
+    sec.past20dTurnoverBdt += stock20dVolBdt;
   });
 
   const result: Record<string, SectorMoneyFlowStat> = {};
-  raw.forEach((data, sector) => {
-    const momentumPct = data.pastTurnover > 0 ? ((data.currentTurnover - data.pastTurnover) / data.pastTurnover) * 100 : 0;
-    const velocity3dPct = data.pastVol3d > 0 ? ((data.vol3d - data.pastVol3d) / data.pastVol3d) * 100 : 0;
-    result[sector] = { 
-      sector, 
-      momentumPct: Number(momentumPct.toFixed(1)), 
-      velocity3dPct: Number(velocity3dPct.toFixed(1)),
-      currentVol: data.currentTurnover, 
-      pastVol: data.pastTurnover 
+  const total20dDays = Math.max(1, past20Dates.size);
+  const total5dDays = Math.max(1, recent5Dates.size);
+
+  sectorMap.forEach((data, sector) => {
+    const currentVolMillion = data.recent5dTurnoverBdt / 1000000;
+    const pastVolMillion = data.prior5dTurnoverBdt / 1000000;
+
+    const avg5dDailyBdt = data.recent5dTurnoverBdt / total5dDays;
+    const avg20dDailyBdt = data.past20dTurnoverBdt / total20dDays;
+
+    // Minimum baseline floor of 2 Million BDT to prevent division by near-zero spikes
+    const MIN_BASELINE_BDT = 2000000;
+    const effectiveBaselineBdt = Math.max(avg20dDailyBdt, MIN_BASELINE_BDT);
+    const expansionRatio = Number((avg5dDailyBdt / effectiveBaselineBdt).toFixed(2));
+
+    const momentumPct = pastVolMillion > 0
+      ? Number((((currentVolMillion - pastVolMillion) / pastVolMillion) * 100).toFixed(1))
+      : expansionRatio >= 1.25 ? 50 : 0;
+
+    const marketSharePct = grandTotalRecent5dBdt > 0
+      ? Number(((data.recent5dTurnoverBdt / grandTotalRecent5dBdt) * 100).toFixed(1))
+      : 0;
+
+    const pastMarketSharePct = grandTotalPast20dBdt > 0
+      ? (data.past20dTurnoverBdt / grandTotalPast20dBdt) * 100
+      : 0;
+
+    const marketShareDelta = Number((marketSharePct - pastMarketSharePct).toFixed(1));
+
+    let status: SectorMoneyFlowStat['status'] = 'CONSOLIDATING';
+    if (expansionRatio >= 1.25 || (momentumPct >= 30 && currentVolMillion > 5)) {
+      status = 'REPEATING_BREAKOUT';
+    } else if (expansionRatio >= 1.10 || (momentumPct >= 12 && currentVolMillion > 2)) {
+      status = 'ACCUMULATING';
+    } else if (expansionRatio < 0.80 || momentumPct < -20) {
+      status = 'OUTFLOW';
+    }
+
+    result[sector] = {
+      sector,
+      momentumPct,
+      currentVol: currentVolMillion,
+      pastVol: pastVolMillion,
+      expansionRatio,
+      marketSharePct,
+      marketShareDelta,
+      status,
     };
   });
+
   return result;
 }
 
@@ -3019,6 +3342,16 @@ export function runDseStockScreener(
 
     // Latest candle & 20d moving averages
     const candles = stock.candles;
+    
+    let daysSinceLastBreakout: number | undefined = undefined;
+    if (singleStockBacktest.signals && singleStockBacktest.signals.length > 0) {
+      const lastSignal = singleStockBacktest.signals[singleStockBacktest.signals.length - 1];
+      const lastSignalIndex = candles.findIndex((c) => c.date === lastSignal.breakoutDate);
+      if (lastSignalIndex !== -1) {
+        daysSinceLastBreakout = (candles.length - 1) - lastSignalIndex;
+      }
+    }
+
     const latest = candles[candles.length - 1];
     const prevCandles = candles.slice(-21, -1);
     const prevClose = prevCandles.length > 0 ? prevCandles[prevCandles.length - 1].close : latest.close;
@@ -3066,8 +3399,29 @@ export function runDseStockScreener(
 
     // Technical Metrics & Volatility Contraction
     const isPriceGreen = latest.close > latest.open;
-    const isVolumeSurge = rvol20 >= config.volumeSurgeMultiplier && isPriceGreen && (isBreakingResistance || isPocketPivot);
-    const isInstitutionalBreakout = isStage2Uptrend && isVolumeSurge && warningFlags.length === 0;
+    const dailyRange = latest.high - latest.low || 1;
+    const closePosition = (latest.close - latest.low) / dailyRange;
+    const isStrongClose = closePosition >= 0.4; // Relaxed to 40% to prevent filtering early accumulation wicks
+
+    const earlyWarnings: string[] = [];
+    const sma20 = prevCandles.length > 0 ? prevCandles.reduce((acc, c) => acc + c.close, 0) / prevCandles.length : latest.close;
+    if (rvol20 > 1.5 && (dailyRange / latest.close) < 0.015) earlyWarnings.push("Volume Churning (High Vol, Low Progress)");
+    if ((latest.close - sma20) / sma20 > 0.12) earlyWarnings.push("Extended from 20d MA (>12%)");
+    if (sma200 !== null && latest.close < sma200 && (sma200 - latest.close) / sma200 < 0.05) earlyWarnings.push("Approaching Overhead 200d MA Supply");
+    
+    let consecutiveRed = 0;
+    let redDropPct = 0;
+    for (let j = candles.length - 2; j >= Math.max(0, candles.length - 5); j--) {
+      if (candles[j].close < candles[j].open) {
+        consecutiveRed++;
+        redDropPct += (candles[j].open - candles[j].close) / candles[j].open;
+      } else break;
+    }
+    if (consecutiveRed >= 3 && redDropPct > 0.05) earlyWarnings.push(`V-Shape Reversal (${consecutiveRed} Red Days, -${(redDropPct*100).toFixed(1)}% Drop)`);
+
+    const isHighMomentumReversal = latest.close > sma50 && isPocketPivot && (rvol20 >= config.volumeSurgeMultiplier);
+    const isVolumeSurge = rvol20 >= config.volumeSurgeMultiplier && isPriceGreen && isStrongClose && (isBreakingResistance || isPocketPivot);
+    const isInstitutionalBreakout = (isStage2Uptrend || isHighMomentumReversal) && isVolumeSurge && warningFlags.length === 0;
 
     // Early Trend Ignition Analysis
     const earlyTrend = detectEarlyTrendIgnition(candles);
@@ -3135,16 +3489,33 @@ export function runDseStockScreener(
     if (stock.peRatio < 15 && stock.peRatio > 0) score += 5;
     if (passesTurnover) score += 5;
 
-    // 7. Sector Money Flow
-    const sectorMoneyFlowPct = sectorMoneyFlow?.[stock.sector]?.momentumPct;
-    if (sectorMoneyFlowPct !== undefined) {
-      if (sectorMoneyFlowPct >= 20) score += 10;
-      else if (sectorMoneyFlowPct >= 10) score += 6;
-      else if (sectorMoneyFlowPct >= 5) score += 3;
+    // 7. Sector Money Flow (Self-Relative Expansion & Market Share Shift)
+    const sectorFlow = sectorMoneyFlow?.[stock.sector];
+    const sectorMoneyFlowPct = sectorFlow?.momentumPct;
+    const sectorExpansionRatio = sectorFlow?.expansionRatio;
+    const sectorMarketShareDelta = sectorFlow?.marketShareDelta;
+
+    if (sectorFlow) {
+      if ((sectorExpansionRatio !== undefined && sectorExpansionRatio >= 1.25) || (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct >= 25)) {
+        score += 10;
+      } else if ((sectorExpansionRatio !== undefined && sectorExpansionRatio >= 1.10) || (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct >= 10)) {
+        score += 6;
+      } else if (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct >= 5) {
+        score += 3;
+      } else if ((sectorExpansionRatio !== undefined && sectorExpansionRatio < 0.75) || (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct <= -25)) {
+        // Sector Outflow drag penalty
+        score -= 5;
+        earlyWarnings.push(`Sector Outflow: ${stock.sector} volume contracted ${Math.abs(sectorMoneyFlowPct || 0).toFixed(0)}% vs baseline`);
+      }
     }
 
-    // Cap score at 100
-    let profitPotentialScore = Math.min(100, score);
+    // 8. Penalize for Early Warnings (Trap Risks)
+    if (earlyWarnings.length > 0) {
+      score -= earlyWarnings.length * 15;
+    }
+
+    // Cap score between 0 and 100
+    let profitPotentialScore = Math.max(0, Math.min(100, score));
 
     // Decision Status Determination
     let decisionStatus: ScreenerStockCandidate['decisionStatus'] = 'NEUTRAL';
@@ -3158,6 +3529,13 @@ export function runDseStockScreener(
       decisionStatus = 'WATCHLIST_BREAKOUT';
     } else if (profitPotentialScore >= 35 || latest.close > ma20Price) {
       decisionStatus = 'CONSOLIDATING_ACCUMULATION';
+    }
+
+    // Downgrade decision if there are severe trap risks
+    if (earlyWarnings.length >= 2 && decisionStatus === 'STRONG_BUY') {
+      decisionStatus = 'WATCHLIST_BREAKOUT';
+    } else if (earlyWarnings.length >= 3) {
+      decisionStatus = 'NEUTRAL';
     }
 
     // Trade Setup Planning
@@ -3189,7 +3567,16 @@ export function runDseStockScreener(
     if (stock.yoyGrowthPct >= 8.0) catalysts.push(`📈 Strong YoY Revenue Growth (+${stock.yoyGrowthPct}%)`);
     if (stock.peRatio < 14) catalysts.push(`🛡️ Attractive P/E Valuation (${stock.peRatio}x)`);
     if (hasReliableOwnHistory && winRate >= 65) catalysts.push(`🏆 ${winRate.toFixed(0)}% Historical Signal Win Rate (${totalSignals} trades)`);
-    if (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct >= 10) catalysts.push(`🌊 ${stock.sector} sector money flow +${sectorMoneyFlowPct.toFixed(0)}%`);
+    if (sectorFlow) {
+      if (sectorExpansionRatio && sectorExpansionRatio >= 1.25) {
+        catalysts.push(`🌊 ${stock.sector} relative volume surge (${sectorExpansionRatio.toFixed(2)}x vs 20d baseline)`);
+      } else if (sectorMoneyFlowPct !== undefined && sectorMoneyFlowPct >= 10) {
+        catalysts.push(`🌊 ${stock.sector} sector money flow +${sectorMoneyFlowPct.toFixed(0)}%`);
+      }
+      if (sectorMarketShareDelta && sectorMarketShareDelta >= 2.0) {
+        catalysts.push(`🔄 Sector capturing +${sectorMarketShareDelta.toFixed(1)}% DSE market share`);
+      }
+    }
 
     if (dseProfile.category === 'Z') warningFlags.push(`⚠️ DSE Category 'Z' Defaulter (T+3 Settlement, Non-Marginable)`);
     if (dseProfile.circuitInfo.isAtLowerCircuit) warningFlags.push(`⛔ Locked at Lower Circuit Floor (৳${dseProfile.circuitInfo.lowerCircuitPrice})`);
@@ -3400,7 +3787,9 @@ export function runDseStockScreener(
       potentialGainPct: targetProfitPct,
       potentialRiskPct: stopLossPct,
       keyCatalysts: catalysts.length > 0 ? catalysts : ['Stable Price & Volume Base'],
+      earlyWarnings,
       breakoutPattern: pattern,
+      daysSinceLastBreakout,
       detectedPattern: finalDetectedPattern,
       patternConfidence: finalPatternConfidence,
       patternDescription: finalPatternDescription,

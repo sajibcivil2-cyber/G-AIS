@@ -12,7 +12,9 @@ import {
   Filter,
   Activity,
   Layers,
-  Sparkles
+  Sparkles,
+  ArrowUpDown,
+  TrendingDown
 } from 'lucide-react';
 import { DseStockData } from '../types';
 
@@ -28,7 +30,9 @@ export interface SectorAnalytics {
   current5dTurnoverCrores: number; // In BDT Crores (1 Crore = 10 Million BDT)
   baseline20dTurnoverCrores: number;
   moneyFlowExpansionRatio: number; // e.g. 2.15x
-  marketMoneyFlowSharePct: number; // % of total market volume
+  marketMoneyFlowSharePct: number; // % of total market volume (5d)
+  pastMarketSharePct: number; // % of total market volume (20d baseline)
+  marketShareDelta: number; // Shift in market share (% points) vs baseline
   estimatedMarketCapCrores: number;
   turnoverVelocityPct: number;
   velocity3dPct: number; // Turnover / Market Cap ratio
@@ -37,6 +41,8 @@ export interface SectorAnalytics {
   topMoverGainPct: number;
 }
 
+export type SectorSortOption = 'EXPANSION' | 'MARKET_SHARE_DELTA' | 'TURNOVER' | 'TOP_MOVER';
+
 export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
   stocks,
   selectedSector,
@@ -44,6 +50,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
 }) => {
   const [showExplanationModal, setShowExplanationModal] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
+  const [sortBy, setSortBy] = useState<SectorSortOption>('EXPANSION');
 
   const [aiSectorLoading, setAiSectorLoading] = useState(false);
   const [aiSectorData, setAiSectorData] = useState<{
@@ -126,6 +133,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
     >();
 
     let grandTotal5dTurnoverBdt = 0;
+    let grandTotal20dTurnoverBdt = 0;
 
     stocks.forEach((s) => {
       if (!s.sector || !s.candles || s.candles.length === 0) return;
@@ -181,6 +189,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       const gainPct = price5dAgo > 0 ? ((lastClose - price5dAgo) / price5dAgo) * 100 : 0;
 
       grandTotal5dTurnoverBdt += avg5dDailyBdt;
+      grandTotal20dTurnoverBdt += avg20dDailyBdt;
 
       if (!sectorMap.has(s.sector)) {
         sectorMap.set(s.sector, {
@@ -226,6 +235,13 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
           ? (data.recent5dTurnoverBdt / grandTotal5dTurnoverBdt) * 100
           : 0;
 
+      const pastMarketSharePct =
+        grandTotal20dTurnoverBdt > 0
+          ? (data.past20dTurnoverBdt / grandTotal20dTurnoverBdt) * 100
+          : 0;
+
+      const marketShareDelta = marketMoneyFlowSharePct - pastMarketSharePct;
+
       const estimatedMarketCapCrores = data.totalMarketCapBdt / 10000000;
 
       const velocity3dPct = estimatedMarketCapCrores > 0 ? (current3dTurnoverCrores / estimatedMarketCapCrores) * 100 : 0;
@@ -234,17 +250,16 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
           ? (current5dTurnoverCrores / estimatedMarketCapCrores) * 100
           : 0;
 
-      // Status classification based on robust DSE sector breakout rules
+      // Status classification based on robust DSE sector relative rotation rules
       let status: SectorAnalytics['status'] = 'CONSOLIDATING';
       if (
-        moneyFlowExpansionRatio >= 1.5 &&
-        current5dTurnoverCrores >= 0.5 &&
-        marketMoneyFlowSharePct >= 3.0
+        moneyFlowExpansionRatio >= 1.25 &&
+        current5dTurnoverCrores >= 0.1
       ) {
         status = 'REPEATING_BREAKOUT'; // Historic institutional money flow surge trigger
-      } else if (moneyFlowExpansionRatio >= 1.2 && current5dTurnoverCrores >= 0.2) {
+      } else if (moneyFlowExpansionRatio >= 1.10 && current5dTurnoverCrores >= 0.05) {
         status = 'ACCUMULATING';
-      } else if (moneyFlowExpansionRatio < 0.75) {
+      } else if (moneyFlowExpansionRatio < 0.80) {
         status = 'OUTFLOW';
       }
 
@@ -255,6 +270,8 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
         baseline20dTurnoverCrores,
         moneyFlowExpansionRatio,
         marketMoneyFlowSharePct,
+        pastMarketSharePct,
+        marketShareDelta,
         estimatedMarketCapCrores,
         turnoverVelocityPct,
         velocity3dPct,
@@ -264,12 +281,24 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       });
     });
 
-    // Sort by Money Flow Expansion Ratio descending (prioritizing sectors with active turnover)
-    return result.sort((a, b) => b.moneyFlowExpansionRatio - a.moneyFlowExpansionRatio);
-  }, [stocks]);
+    // Dynamic sorting based on active sort option
+    return result.sort((a, b) => {
+      if (sortBy === 'EXPANSION') {
+        return b.moneyFlowExpansionRatio - a.moneyFlowExpansionRatio;
+      } else if (sortBy === 'MARKET_SHARE_DELTA') {
+        return b.marketShareDelta - a.marketShareDelta;
+      } else if (sortBy === 'TURNOVER') {
+        return b.current5dTurnoverCrores - a.current5dTurnoverCrores;
+      } else if (sortBy === 'TOP_MOVER') {
+        return b.topMoverGainPct - a.topMoverGainPct;
+      }
+      return b.moneyFlowExpansionRatio - a.moneyFlowExpansionRatio;
+    });
+  }, [stocks, sortBy]);
 
   // Sector stats count
   const repeatingCount = sectorAnalytics.filter((s) => s.status === 'REPEATING_BREAKOUT').length;
+  const accumulatingCount = sectorAnalytics.filter((s) => s.status === 'ACCUMULATING').length;
   const topFlowSector = sectorAnalytics[0];
 
   return (
@@ -283,16 +312,16 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-extrabold text-white text-sm font-mono tracking-tight">
-                Sector Money Flow & Rotation Matrix
+                Sector Relative Money Flow & Rotation Matrix
               </h3>
               {repeatingCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/40 font-bold animate-pulse">
-                  🔥 {repeatingCount} Sector{repeatingCount > 1 ? 's' : ''} in Historic Flow Surge
+                  🔥 {repeatingCount} Sector{repeatingCount > 1 ? 's' : ''} in Relative Flow Surge
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-400">
-              Scans money flow velocity (Turnover / Market Cap) & volume expansion across DSE sectors.
+              Measures relative volume expansion vs. 20-day historical baseline and cross-market share migration.
             </p>
           </div>
         </div>
@@ -312,7 +341,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-mono font-semibold transition-all border border-slate-700"
           >
             <HelpCircle className="w-3.5 h-3.5" />
-            <span>How to Use Matrix?</span>
+            <span>Why Relative Flow?</span>
           </button>
 
           <button
@@ -358,22 +387,22 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-          <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Top Money Flow Leader</div>
+          <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Top Relative Surge Leader</div>
           <div className="font-extrabold text-emerald-400 text-sm font-mono truncate">
             {topFlowSector ? topFlowSector.sector : 'N/A'}
           </div>
           <div className="text-[10px] text-slate-400 font-mono">
-            Flow Ratio: <span className="text-emerald-300 font-bold">{topFlowSector ? topFlowSector.moneyFlowExpansionRatio.toFixed(2) : 0}x</span> Baseline
+            Flow Surge: <span className="text-emerald-300 font-bold">{topFlowSector ? topFlowSector.moneyFlowExpansionRatio.toFixed(2) : 0}x</span> Baseline
           </div>
         </div>
 
         <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-          <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Historic Flow Surge Rule</div>
+          <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Institutional Flow Regimes</div>
           <div className="font-extrabold text-indigo-300 text-sm font-mono">
-            {repeatingCount} Active Sector{repeatingCount !== 1 ? 's' : ''}
+            {repeatingCount} Surging • {accumulatingCount} Early
           </div>
           <div className="text-[10px] text-slate-400 font-mono">
-            {repeatingCount > 0 ? '🟢 Currently Repeating Trend' : '🟡 Neutral Rotation'}
+            {repeatingCount > 0 ? '🟢 Active Sector Breakouts' : '🟡 Neutral Rotation'}
           </div>
         </div>
 
@@ -391,18 +420,18 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
                 Reset Filter (Show All)
               </button>
             ) : (
-              'Click any sector below to filter'
+              'Click any card below to filter'
             )}
           </div>
         </div>
 
         <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-          <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Sector Velocity Benchmark</div>
-          <div className="font-extrabold text-white text-sm font-mono">
-            &gt; 1.8x Turnover
+          <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Relative Surge Threshold</div>
+          <div className="font-extrabold text-emerald-400 text-sm font-mono">
+            &ge; 1.25x (+25% vs Baseline)
           </div>
           <div className="text-[10px] text-slate-400 font-mono">
-            Historical DSE Breakout Threshold
+            Institutional Entry Confirmation
           </div>
         </div>
       </div>
@@ -410,9 +439,54 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
       {/* Expanded Sector Heatmap & Matrix */}
       {isExpanded && (
         <div className="space-y-3 pt-2">
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400 px-1">
-            <span>Select a sector card to isolate its breakout candidates across Screener & Charts:</span>
-            <span>{sectorAnalytics.length} Sectors Scanned</span>
+          {/* Sorting & Filter Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-2 text-slate-400">
+              <ArrowUpDown className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Rank Sectors By:</span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => setSortBy('EXPANSION')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  sortBy === 'EXPANSION'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                🌊 Relative Flow Surge (Ratio)
+              </button>
+              <button
+                onClick={() => setSortBy('MARKET_SHARE_DELTA')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  sortBy === 'MARKET_SHARE_DELTA'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                🔄 Market Share Migration (Δ%)
+              </button>
+              <button
+                onClick={() => setSortBy('TURNOVER')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  sortBy === 'TURNOVER'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                ৳ 5d Turnover (BDT Cr)
+              </button>
+              <button
+                onClick={() => setSortBy('TOP_MOVER')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  sortBy === 'TOP_MOVER'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                📈 Top Stock Gain %
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -434,6 +508,10 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
                 statusBadgeClass = 'bg-rose-500/20 text-rose-300 border-rose-500/40';
                 statusText = '🔻 Volume Outflow';
               }
+
+              const flowDeltaPct = (sec.moneyFlowExpansionRatio - 1) * 100;
+              const isMarketShareGainer = sec.marketShareDelta >= 0.5;
+              const isMarketShareLoser = sec.marketShareDelta <= -0.5;
 
               return (
                 <div
@@ -463,44 +541,58 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
                   {/* Metrics Grid */}
                   <div className="grid grid-cols-4 gap-2 bg-slate-900/80 p-2 rounded-lg text-xs font-mono">
                     <div>
-                      <span className="text-[9px] text-slate-400 block">5d Turnover</span>
+                      <span className="text-[9px] text-slate-400 block" title="5-Day Average Turnover vs 20-Day Baseline">5d Turnover</span>
                       <span className="font-extrabold text-white text-[11px]">৳{sec.current5dTurnoverCrores.toFixed(1)} Cr</span>
+                      <span className="text-[8px] text-slate-400 block font-normal">base: ৳{sec.baseline20dTurnoverCrores.toFixed(1)}</span>
                     </div>
 
                     <div>
-                      <span className="text-[9px] text-slate-400 block">Flow Surge</span>
-                      <span className={`font-extrabold text-[11px] ${sec.moneyFlowExpansionRatio >= 1.8 ? 'text-emerald-400' : sec.moneyFlowExpansionRatio >= 1.25 ? 'text-indigo-300' : 'text-slate-300'}`}>
+                      <span className="text-[9px] text-slate-400 block" title="Relative Expansion Ratio vs 20-Day Baseline">Relative Surge</span>
+                      <span className={`font-extrabold text-[11px] ${sec.moneyFlowExpansionRatio >= 1.25 ? 'text-emerald-400' : sec.moneyFlowExpansionRatio >= 1.10 ? 'text-indigo-300' : sec.moneyFlowExpansionRatio < 0.8 ? 'text-rose-400' : 'text-slate-300'}`}>
                         {sec.moneyFlowExpansionRatio.toFixed(2)}x
+                      </span>
+                      <span className={`text-[8px] block font-bold ${flowDeltaPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {flowDeltaPct >= 0 ? '+' : ''}{flowDeltaPct.toFixed(0)}%
                       </span>
                     </div>
 
                     <div>
-                      <span className="text-[9px] text-slate-400 block">Market Share</span>
+                      <span className="text-[9px] text-slate-400 block" title="Share of Total Market Turnover (5d)">Market Share</span>
                       <span className="font-extrabold text-amber-300 text-[11px]">{sec.marketMoneyFlowSharePct.toFixed(1)}%</span>
+                      <span className={`text-[8px] block font-bold ${isMarketShareGainer ? 'text-emerald-400' : isMarketShareLoser ? 'text-rose-400' : 'text-slate-400'}`}>
+                        {sec.marketShareDelta >= 0 ? '▲+' : '▼'}{sec.marketShareDelta.toFixed(1)}%
+                      </span>
                     </div>
 
                     <div>
                       <span className="text-[9px] text-slate-400 block" title="3-Day Velocity (Turnover / Market Cap)">3d Velocity</span>
                       <span className="font-extrabold text-blue-300 text-[11px]">{sec.velocity3dPct.toFixed(2)}%</span>
+                      <span className="text-[8px] text-slate-400 block">cap-weighted</span>
                     </div>
                   </div>
 
-                  {/* Expansion Progress Visualizer */}
+                  {/* Relative Expansion Meter with 1.0x Baseline Marker */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                      <span>Money Flow vs 20d Baseline:</span>
-                      <span className="font-bold text-slate-200">
-                        {sec.moneyFlowExpansionRatio >= 1.0 ? '+' : ''}
-                        {((sec.moneyFlowExpansionRatio - 1) * 100).toFixed(0)}%
+                      <span>Flow vs 20d Baseline (1.0x = Baseline):</span>
+                      <span className={`font-bold ${flowDeltaPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {flowDeltaPct >= 0 ? '+' : ''}{flowDeltaPct.toFixed(0)}% vs Baseline
                       </span>
                     </div>
-                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden relative">
+                      {/* 1.0x baseline reference line (at 33.3% of scale) */}
+                      <div className="absolute top-0 bottom-0 left-1/3 w-0.5 bg-slate-400/50 z-10" title="1.0x Baseline" />
+                      {/* 1.25x breakout threshold line (at 41.6% of scale) */}
+                      <div className="absolute top-0 bottom-0 left-[41.6%] w-0.5 bg-emerald-400/40 z-10" title="1.25x Surge Threshold" />
+                      
                       <div
                         className={`h-full rounded-full transition-all ${
-                          sec.moneyFlowExpansionRatio >= 1.8
-                            ? 'bg-emerald-400'
-                            : sec.moneyFlowExpansionRatio >= 1.25
+                          sec.moneyFlowExpansionRatio >= 1.25
+                            ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                            : sec.moneyFlowExpansionRatio >= 1.10
                             ? 'bg-indigo-400'
+                            : sec.moneyFlowExpansionRatio < 0.8
+                            ? 'bg-rose-500'
                             : 'bg-slate-600'
                         }`}
                         style={{
@@ -524,7 +616,7 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-indigo-400" />
                 <h3 className="font-bold text-white text-base font-mono">
-                  Understanding Sector Money Flow & Trend Repetition
+                  Why Relative Sector Flow Beats Nominal BDT Turnover
                 </h3>
               </div>
               <button
@@ -539,43 +631,55 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
               <div className="bg-indigo-950/40 border border-indigo-500/30 p-3.5 rounded-xl space-y-2">
                 <h4 className="font-bold text-indigo-300 text-sm flex items-center gap-1.5">
                   <Zap className="w-4 h-4 text-amber-400" />
-                  1. Utility of the Sector Filter & Money Flow Matrix
+                  1. The "Nominal BDT Trap" on the DSE
                 </h4>
                 <p>
-                  On the Dhaka Stock Exchange (DSE), smart institutional money never buys all stocks simultaneously. Capital moves in <strong>Sector Waves ("Sector Money Flow")</strong>. Filtering by sector isolates candidates within the leading group where money flow is concentrating before the main price breakout happens.
+                  Large-cap sectors like <strong>Banks</strong> or <strong>Pharma</strong> trade hundreds of Crores simply due to massive share float. If Bank turnover is ৳60 Crore today but its 20-day baseline is ৳90 Crore, money is actually <strong>draining out (-33%)</strong>. Conversely, if <strong>IT or Engineering</strong> jumps from ৳3 Cr to ৳9 Cr, it has experienced a <strong>3.0x (+200%) institutional capital flood</strong>. The biggest swing gains happen in the 3.0x relative surge!
                 </p>
               </div>
 
               <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl space-y-2 font-mono">
                 <h4 className="font-bold text-emerald-300 text-sm flex items-center gap-1.5 font-sans">
                   <PieChart className="w-4 h-4 text-emerald-400" />
-                  2. Money Flow vs. Sector Market Cap Significance
+                  2. The Two Relative Rotation Dimensions We Track
                 </h4>
-                <p className="font-sans">
-                  Absolute money flow (nominal turnover in BDT) can be deceptive. A huge market cap sector (like Banks) always trades high nominal BDT volume. To identify true sector money flow, look at <strong>Turnover Expansion Ratio (5d Avg Turnover / 20d Baseline Turnover)</strong> and <strong>Money Flow Market Share</strong>.
-                </p>
-                <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400 pt-1">
-                  <li><strong className="text-white">High Market Cap Sectors:</strong> Require sustained 1.5x+ flow expansion to move prices.</li>
-                  <li><strong className="text-white">Mid/Small Cap Sectors (IT, Pharma, Textiles, Engineering):</strong> Low float means even a 2.0x surge in BDT turnover triggers explosive multi-week sector rallies.</li>
-                </ul>
+                <div className="space-y-2 font-sans pt-1">
+                  <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                    <span className="text-emerald-400 font-bold block">Axis A: Self-Relative Expansion Ratio</span>
+                    <span className="text-slate-400 text-[11px]">
+                      <code>Current 5d Avg Daily Turnover / 20d Baseline Turnover</code>. A score of &ge;1.25x (+25%) confirms institutional accumulation.
+                    </span>
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                    <span className="text-amber-300 font-bold block">Axis B: Market Share Shift (Migration Δ)</span>
+                    <span className="text-slate-400 text-[11px]">
+                      Tracks what percentage of total DSE market turnover this sector captures now vs its 20-day average. A positive shift (e.g. ▲+3.5%) proves macro capital is actively migrating into this sector.
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl space-y-2 font-mono">
                 <h4 className="font-bold text-amber-300 text-sm flex items-center gap-1.5 font-sans">
                   <Activity className="w-4 h-4 text-amber-400" />
-                  3. Historical Money Flow Thresholds for Sector Trending
+                  3. Classification Badges & Rules
                 </h4>
-                <p className="font-sans">
-                  Historically on DSE, a sector shifts from quiet consolidation into a major trending rally when:
-                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
-                  <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                    <span className="text-emerald-400 font-bold block">1. Volume Surge Multiplier &ge; 1.8x - 2.5x</span>
-                    <span className="text-slate-400">5-day average daily turnover doubles its 20-day historical baseline.</span>
+                  <div className="bg-slate-900 p-2.5 rounded-lg border border-emerald-500/30">
+                    <span className="text-emerald-400 font-bold block">🔥 Historic Flow Surge (&ge;1.25x)</span>
+                    <span className="text-slate-400">Institutional wave active. Individual breakout patterns have maximum follow-through probability.</span>
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded-lg border border-indigo-500/30">
+                    <span className="text-indigo-300 font-bold block">⚡ Volume Accumulating (1.10x - 1.24x)</span>
+                    <span className="text-slate-400">Stealth accumulation before public breakout. Ideal for early Stage-2 entries.</span>
                   </div>
                   <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                    <span className="text-amber-300 font-bold block">2. Market Money Share &ge; 8% - 15%</span>
-                    <span className="text-slate-400">Sector captures over 8% of total daily market turnover.</span>
+                    <span className="text-slate-300 font-bold block">⚖️ Consolidating (0.80x - 1.09x)</span>
+                    <span className="text-slate-400">Standard background volume. Trades rely strictly on stock-specific technicals.</span>
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded-lg border border-rose-500/30">
+                    <span className="text-rose-400 font-bold block">🔻 Volume Outflow (&lt;0.80x)</span>
+                    <span className="text-slate-400">Capital is draining to other sectors. Screener penalizes setups to avoid fakeouts.</span>
                   </div>
                 </div>
               </div>
@@ -583,10 +687,10 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
               <div className="bg-emerald-950/30 border border-emerald-500/30 p-3.5 rounded-xl space-y-1.5">
                 <h4 className="font-bold text-emerald-300 text-sm flex items-center gap-1.5">
                   <Flame className="w-4 h-4 text-emerald-400" />
-                  4. Is this currently repeating in today's dataset?
+                  4. How to Use this with the Screener
                 </h4>
                 <p>
-                  Check the <strong className="text-emerald-400">🔥 Historic Flow Surge</strong> cards in this matrix above. When a sector displays <strong>&gt;1.8x Money Flow Ratio</strong>, history is repeating right now — institutionally backed volume breakouts are occurring in that sector's individual stock charts!
+                  Click any sector card in this matrix to instantly filter the entire stock universe and screener to that sector. When trading breakout setups, prioritize stocks whose sectors display <strong>🔥 Historic Flow Surge</strong> with a positive market share delta.
                 </p>
               </div>
             </div>
@@ -594,9 +698,9 @@ export const SectorMoneyFlowMatrix: React.FC<SectorMoneyFlowMatrixProps> = ({
             <div className="flex justify-end pt-2">
               <button
                 onClick={() => setShowExplanationModal(false)}
-                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold transition-all shadow-lg"
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold transition-all shadow-lg cursor-pointer"
               >
-                Got It! Inspect Money Flow Matrix
+                Got It! Inspect Relative Flow Matrix
               </button>
             </div>
           </div>

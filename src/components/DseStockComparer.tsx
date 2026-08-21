@@ -594,7 +594,7 @@ export const DseStockComparer: React.FC<DseStockComparerProps> = ({
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left font-mono">
-            <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+            <thead className="bg-slate-950 sticky top-0 z-10 text-slate-400 text-[11px] uppercase border-b border-slate-800">
               <tr>
                 <th className="p-3">Comparison Metric</th>
                 <th className="p-3 text-cyan-400 w-2/5">Stock A: {symbolA}</th>

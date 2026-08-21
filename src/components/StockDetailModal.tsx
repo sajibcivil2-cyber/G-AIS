@@ -83,6 +83,8 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
           riskRewardRatio: candidate.riskRewardRatio,
           rvol20: candidate.rvol20,
           breakoutPattern: candidate.breakoutPattern,
+          earlyWarnings: candidate.earlyWarnings,
+          daysSinceLastBreakout: candidate.daysSinceLastBreakout,
           detectedPattern: candidate.detectedPattern,
           peRatio: candidate.peRatio,
           yoyGrowthPct: candidate.yoyGrowthPct,

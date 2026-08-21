@@ -92,11 +92,11 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
   // Strategy Configuration State
   const [config, setConfig] = useState<BacktestConfig>({
     minYoyGrowthPct: 0.0, // Set to 0 so pure price-action datasets aren't blocked
-    volumeSurgeMultiplier: 2.0, // 2x 20-day ADV is a strong standard
+    volumeSurgeMultiplier: 1.8, // 1.8x 20-day ADV to catch legitimate early moves
     microConsolidationDays: 5,
     macroBaseDays: 30,
-    stopLossPct: 5.0,
-    targetProfitPct: 15.0,
+    stopLossPct: 4.5,
+    targetProfitPct: 10.0, // Reduced to track 7-10% momentum swings more accurately
     minTurnoverMillionBdt: 0.0, // Set to 0 to prevent filtering out raw price-only datasets
   });
 
@@ -1200,7 +1200,7 @@ export const DseBacktester: React.FC<DseBacktesterProps> = ({ uploadedFiles }) =
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300 border-collapse">
-              <thead>
+              <thead className="bg-slate-950 sticky top-0 z-10">
                 <tr className="border-b border-slate-800 text-slate-500 uppercase tracking-wider font-semibold">
                   <th className="py-2.5 px-3">Stock Symbol</th>
                   <th className="py-2.5 px-3">Breakout Date</th>

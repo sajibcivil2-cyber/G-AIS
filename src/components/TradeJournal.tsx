@@ -391,7 +391,7 @@ export function TradeJournal({ breakoutSignals = [], stocks = [], onApplyOptimiz
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-300">
-              <thead className="bg-slate-950 border-b border-slate-800 text-[10px] uppercase text-slate-500">
+              <thead className="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-[10px] uppercase text-slate-500">
                 <tr>
                   <th className="px-4 py-3 font-bold">Symbol</th>
                   <th className="px-4 py-3 font-bold">Status</th>

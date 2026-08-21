@@ -38,6 +38,7 @@ import { PatternEdgeStat, DseStockData, BacktestConfig, ScreenerStockCandidate, 
 import { runDseStockScreener, parseCustomDseStockFiles, extractStockDataFromExtractedFiles, extractStockDataFromExtractedFilesAsync, mergeAndProcessStockDatasets, generateFullDseMarketUniverse } from '../utils/dseBacktestEngine';
 import { parseZipFile } from '../utils/zipParser';
 import { StockDetailModal } from './StockDetailModal';
+import { applySectorOverrides } from '../utils/sectorMapping';
 
 export type StrategyArchetypeTab = 'ALL' | 'IMMEDIATE_MOMENTUM' | 'EARLY_ACCUMULATION' | 'HIGH_CONVICTION_SWINGS';
 
@@ -431,10 +432,15 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
   const [selectedCandidateModal, setSelectedCandidateModal] = useState<ScreenerStockCandidate | null>(null);
 
+  // Sanitize stocks with authoritative sector overrides
+  const cleanStocks = useMemo(() => {
+    return applySectorOverrides(stocks);
+  }, [stocks]);
+
   // Run Screener Analysis across current stock pool
   const candidates = useMemo(() => {
-    return runDseStockScreener(stocks, config, edgeStats, sectorMoneyFlow);
-  }, [stocks, config, edgeStats, sectorMoneyFlow]);
+    return runDseStockScreener(cleanStocks, config, edgeStats, sectorMoneyFlow);
+  }, [cleanStocks, config, edgeStats, sectorMoneyFlow]);
 
   // Strategy Archetype Pools
   const immediateMomentumPool = useMemo(() => candidates.filter((c) => getStockStrategyArchetypes(c).isImmediateMomentum), [candidates]);
@@ -443,9 +449,9 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
 
   // Distinct Sectors in Stock Pool
   const sectors = useMemo(() => {
-    const list = Array.from(new Set(stocks.map((s) => s.sector))).sort();
+    const list = Array.from(new Set(cleanStocks.map((s) => s.sector))).sort();
     return ['ALL', ...list];
-  }, [stocks]);
+  }, [cleanStocks]);
 
   // Filtered & Sorted Candidates
   const filteredCandidates = useMemo(() => {
@@ -1144,6 +1150,27 @@ export const DseStockScreener: React.FC<DseStockScreenerProps> = ({
                             Score: {c.profitPotentialScore}%
                           </span>
                         </div>
+
+                        {c.daysSinceLastBreakout !== undefined && (
+                          <div className="text-[9px] font-mono mb-2 flex items-center justify-between">
+                            <span className="text-slate-500">Recency:</span>
+                            {c.daysSinceLastBreakout === 0 ? (
+                              <span className="text-emerald-400 font-bold bg-emerald-500/10 px-1 rounded">🔥 Triggered Today</span>
+                            ) : (
+                              <span className="text-slate-400">{c.daysSinceLastBreakout} session{c.daysSinceLastBreakout !== 1 ? 's' : ''} ago</span>
+                            )}
+                          </div>
+                        )}
+
+                        {c.earlyWarnings && c.earlyWarnings.length > 0 && (
+                          <div className="mb-2 flex flex-col gap-0.5">
+                            {c.earlyWarnings.map((warning, i) => (
+                              <span key={i} className="text-[8px] font-mono font-bold text-rose-400 bg-rose-500/10 px-1 py-0.5 rounded border border-rose-500/20 line-clamp-1">
+                                ⚠️ {warning}
+                              </span>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Action Buttons */}
                         <div className="flex items-center gap-1.5 pt-1">
